@@ -16,6 +16,37 @@ export interface Department {
   level: number;
 }
 
+export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'textarea' | 'select';
+
+export interface FormFieldRule {
+  id: string;
+  conditionFieldId: string;
+  conditionValue: any;
+  effect: 'hide' | 'show' | 'require' | 'optional';
+}
+
+export interface FormField {
+  id: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  options?: string[];
+  maxSelections?: number;
+  rules?: FormFieldRule[];
+}
+
+export interface WorkflowStep {
+  id: string;
+  label: string;
+  approverType: 'user' | 'dept_manager' | 'super_admin';
+  approverId?: string; // Specific user UID if type is 'user'
+  condition?: {
+    fieldId: string;
+    operator: '>' | '<' | '==' | 'contains';
+    value: any;
+  };
+}
+
 export interface FormResponse {
   id: string;
   responseUrl: string;
@@ -24,8 +55,14 @@ export interface FormResponse {
   responderName: string;
   responderDepartmentId: string;
   respondedAt: string;
+  answers?: { [fieldId: string]: any };
   isVoided?: boolean;
   voidedAt?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  workflow?: WorkflowStep[];
+  currentWorkflowStepIndex?: number;
+  approvals?: { [uid: string]: boolean };
+  logs?: FormLog[];
 }
 
 export interface FormLog {
@@ -55,6 +92,11 @@ export interface Form {
   isVoided?: boolean;
   voidedAt?: string;
   logs?: FormLog[];
+  fields?: FormField[];
+  initialAnswers?: { [fieldId: string]: any };
+  workflow?: WorkflowStep[];
+  responseWorkflow?: WorkflowStep[];
+  currentWorkflowStepIndex?: number;
   createdAt: string;
   publishStartTime?: string;
   publishEndTime?: string;

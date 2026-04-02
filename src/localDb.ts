@@ -84,6 +84,19 @@ export const localDb = {
     let approvalStep: Form['approvalStep'] = 'dept_manager';
     const approvals: { [deptId: string]: boolean } = {};
 
+    // If custom workflow is provided, use it
+    if (form.workflow && form.workflow.length > 0) {
+      return {
+        ...form,
+        status: 'pending' as const,
+        approvalStep: 'custom' as any,
+        currentWorkflowStepIndex: 0,
+        approvals: {},
+        deptManagerApproved: false,
+        superAdminApproved: false
+      };
+    }
+
     if (user.role === 'super_admin') {
       status = 'approved';
       approvalStep = 'completed';
@@ -131,12 +144,56 @@ export const localDb = {
     notifyUpdate();
     return id;
   },
-  approveForm: async (id: string, user: { uid: string, displayName: string, role: any, departmentId: string }) => {
+  approveForm: async (id: string, user: { uid: string, displayName: string, role: any, departmentId: string }, answers?: { [fieldId: string]: any }) => {
     const db = await getDb();
     const form = await db.get(FORMS_STORE, id);
     if (!form || (form.status !== 'pending' && form.status !== 'approved')) return;
 
-    if (user.role === 'super_admin') {
+    const dataToCheck = answers || form.initialAnswers || {};
+
+    if (form.approvalStep === ('custom' as any)) {
+      const currentStep = form.workflow?.[form.currentWorkflowStepIndex || 0];
+      if (!currentStep) return;
+
+      // Check if this user is authorized to approve this step
+      let authorized = false;
+      if (currentStep.approverType === 'super_admin' && user.role === 'super_admin') authorized = true;
+      if (currentStep.approverType === 'dept_manager' && user.role === 'admin' && user.departmentId === form.departmentId) authorized = true;
+      if (currentStep.approverType === 'user' && user.uid === currentStep.approverId) authorized = true;
+
+      if (authorized) {
+        // Move to next step
+        let nextIndex = (form.currentWorkflowStepIndex || 0) + 1;
+        
+        // Skip steps if condition is not met
+        while (nextIndex < (form.workflow?.length || 0)) {
+          const nextStep = form.workflow![nextIndex];
+          if (nextStep.condition) {
+            const val = dataToCheck[nextStep.condition.fieldId] || '';
+            let met = false;
+            const condVal = nextStep.condition.value;
+            if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
+            if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
+            if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
+            if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
+            
+            if (!met) {
+              nextIndex++;
+              continue;
+            }
+          }
+          break;
+        }
+
+        if (nextIndex >= (form.workflow?.length || 0)) {
+          form.status = 'approved';
+          form.approvalStep = 'completed';
+        } else {
+          form.currentWorkflowStepIndex = nextIndex;
+        }
+        localDb.logAction(form, 'approve', user, `核准流程步驟: ${currentStep.label}`);
+      }
+    } else if (user.role === 'super_admin') {
       form.status = 'approved';
       form.approvalStep = 'completed';
       form.superAdminApproved = true;
@@ -248,16 +305,149 @@ export const localDb = {
     const form = await db.get(FORMS_STORE, formId);
     if (form) {
       if (!form.responses) form.responses = [];
-      form.responses.push({
-        id: Math.random().toString(36).substr(2, 9),
+      
+      const responseId = Math.random().toString(36).substr(2, 9);
+      const newResponse: any = {
+        id: responseId,
         ...response,
         responderDepartmentId: user.departmentId,
-        respondedAt: new Date().toISOString()
-      });
+        respondedAt: new Date().toISOString(),
+        status: 'pending',
+        workflow: form.responseWorkflow || [],
+        currentWorkflowStepIndex: 0,
+        approvals: {},
+        logs: []
+      };
+
+      // Handle initial step skip if condition not met
+      if (newResponse.workflow && newResponse.workflow.length > 0) {
+        let currentIndex = 0;
+        const answers = response.answers || {};
+        
+        while (currentIndex < newResponse.workflow.length) {
+          const step = newResponse.workflow[currentIndex];
+          if (step.condition) {
+            const val = answers[step.condition.fieldId] || '';
+            let met = false;
+            const condVal = step.condition.value;
+            if (step.condition.operator === '==') met = String(val) === String(condVal);
+            if (step.condition.operator === '>') met = Number(val) > Number(condVal);
+            if (step.condition.operator === '<') met = Number(val) < Number(condVal);
+            if (step.condition.operator === 'contains') met = String(val).includes(String(condVal));
+            
+            if (!met) {
+              currentIndex++;
+              continue;
+            }
+          }
+          break;
+        }
+        
+        if (currentIndex >= newResponse.workflow.length) {
+          newResponse.status = 'approved';
+        } else {
+          newResponse.currentWorkflowStepIndex = currentIndex;
+        }
+      } else {
+        newResponse.status = 'approved';
+      }
+
+      form.responses.push(newResponse);
       localDb.logAction(form, 'respond', user);
       await db.put(FORMS_STORE, form);
       notifyUpdate();
     }
+  },
+
+  approveResponse: async (formId: string, responseId: string, user: { uid: string, displayName: string, role: any, departmentId: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, formId);
+    if (!form || !form.responses) return;
+
+    const responseIndex = form.responses.findIndex((r: any) => r.id === responseId);
+    if (responseIndex === -1) return;
+    const response = form.responses[responseIndex];
+    if (response.status !== 'pending') return;
+
+    const currentStep = response.workflow?.[response.currentWorkflowStepIndex || 0];
+    if (!currentStep) return;
+
+    // Check if this user is authorized to approve this step
+    let authorized = false;
+    if (currentStep.approverType === 'super_admin' && user.role === 'super_admin') authorized = true;
+    if (currentStep.approverType === 'dept_manager' && user.role === 'admin' && user.departmentId === response.responderDepartmentId) authorized = true;
+    if (currentStep.approverType === 'user' && user.uid === currentStep.approverId) authorized = true;
+
+    if (authorized) {
+      // Move to next step
+      let nextIndex = (response.currentWorkflowStepIndex || 0) + 1;
+      const answers = response.answers || {};
+      
+      // Skip steps if condition is not met
+      while (nextIndex < (response.workflow?.length || 0)) {
+        const nextStep = response.workflow![nextIndex];
+        if (nextStep.condition) {
+          const val = answers[nextStep.condition.fieldId] || '';
+          let met = false;
+          const condVal = nextStep.condition.value;
+          if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
+          if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
+          if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
+          if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
+          
+          if (!met) {
+            nextIndex++;
+            continue;
+          }
+        }
+        break;
+      }
+
+      if (nextIndex >= (response.workflow?.length || 0)) {
+        response.status = 'approved';
+      } else {
+        response.currentWorkflowStepIndex = nextIndex;
+      }
+      
+      if (!response.logs) response.logs = [];
+      response.logs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        action: 'approve',
+        userId: user.uid,
+        userName: user.displayName,
+        timestamp: new Date().toISOString(),
+        details: `核准流程步驟: ${currentStep.label}`
+      });
+
+      await db.put(FORMS_STORE, form);
+      notifyUpdate();
+    }
+  },
+
+  rejectResponse: async (formId: string, responseId: string, user: { uid: string, displayName: string, role: any }, reason: string) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, formId);
+    if (!form || !form.responses) return;
+
+    const responseIndex = form.responses.findIndex((r: any) => r.id === responseId);
+    if (responseIndex === -1) return;
+    const response = form.responses[responseIndex];
+    if (response.status !== 'pending') return;
+
+    response.status = 'rejected';
+    
+    if (!response.logs) response.logs = [];
+    response.logs.push({
+      id: Math.random().toString(36).substr(2, 9),
+      action: 'reject',
+      userId: user.uid,
+      userName: user.displayName,
+      timestamp: new Date().toISOString(),
+      details: `駁回原因: ${reason}`
+    });
+    
+    await db.put(FORMS_STORE, form);
+    notifyUpdate();
   },
 
   clearAllData: async () => {
