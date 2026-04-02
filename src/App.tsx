@@ -1,0 +1,1775 @@
+import React, { useState, useEffect } from 'react';
+import { UserProfile, Department, Form, Role } from './types';
+import { localDb } from './localDb';
+import { 
+  LayoutDashboard, 
+  FileText, 
+  Users, 
+  LogOut, 
+  Plus, 
+  CheckCircle, 
+  XCircle, 
+  Shield,
+  Building2,
+  Send,
+  Paperclip,
+  Download,
+  Upload,
+  Lock,
+  Menu,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  FileUp,
+  HelpCircle,
+  Info,
+  Edit,
+  Trash2,
+  Search,
+  Filter,
+  History,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+const DEPARTMENTS: Department[] = [
+  { id: 'mgmt', name: '管理部', parentId: null, level: 1 },
+  { id: 'project', name: '專案組', parentId: 'mgmt', level: 2 },
+  { id: 'sales', name: '業務部', parentId: 'mgmt', level: 2 },
+  { id: 'rd', name: '研發部', parentId: 'mgmt', level: 2 },
+  { id: 'group-a', name: 'A組', parentId: 'project', level: 3 },
+  { id: 'group-b', name: 'B組', parentId: 'project', level: 3 },
+];
+
+const getSubDepartmentIds = (deptId: string): string[] => {
+  const subDepts = DEPARTMENTS.filter(d => d.parentId === deptId);
+  let ids = [deptId];
+  subDepts.forEach(sd => {
+    ids = [...ids, ...getSubDepartmentIds(sd.id)];
+  });
+  return ids;
+};
+
+// Mock User Type
+interface MockUser {
+  uid: string;
+  email: string;
+  displayName: string;
+}
+
+export default function App() {
+  const [user, setUser] = useState<MockUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [forms, setForms] = useState<Form[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'submit' | 'manage' | 'users'>('dashboard');
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Responsive Listener
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setIsSidebarOpen(false);
+      else setIsSidebarOpen(true);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  // Auth Listener (Local)
+  useEffect(() => {
+    const initAuth = () => {
+      const savedUser = localStorage.getItem('mock_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser) as MockUser;
+        setUser(u);
+        fetchProfile(u.uid);
+      } else {
+        setLoading(false);
+      }
+    };
+    initAuth();
+  }, []);
+
+  const fetchProfile = (uid: string) => {
+    const userProfile = localDb.getUser(uid);
+    if (userProfile) {
+      setProfile(userProfile);
+      setShowProfileSetup(false);
+    } else {
+      setShowProfileSetup(true);
+    }
+    setLoading(false);
+  };
+
+  // Forms Listener (Local)
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    const updateForms = () => {
+      const allForms = localDb.getForms();
+      const allUsers = localDb.getUsers();
+      setUsers(allUsers);
+
+      const sortedForms = allForms.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      // Visibility Logic:
+      // 1. super_admin sees everything
+      // 2. admin sees everything
+      // 3. user sees: public OR same department OR targeted department OR own forms
+      let visibleForms = sortedForms;
+      if (profile.role === 'user') {
+        visibleForms = sortedForms.filter(f => 
+          f.isPublic || 
+          f.departmentId === profile.departmentId || 
+          f.authorUid === user.uid ||
+          (f.targetDepartmentIds && f.targetDepartmentIds.includes(profile.departmentId))
+        );
+      }
+
+      setForms(visibleForms);
+    };
+
+    updateForms();
+    window.addEventListener('local-db-update', updateForms);
+    return () => window.removeEventListener('local-db-update', updateForms);
+  }, [user, profile]);
+
+  const handleLogin = (username: string) => {
+    const mockUid = `mock_${username.toLowerCase()}`;
+    const u: MockUser = {
+      uid: mockUid,
+      email: `${username}@demo.com`,
+      displayName: username,
+    };
+    
+    setLoading(true);
+    localStorage.setItem('mock_user', JSON.stringify(u));
+    setUser(u);
+    fetchProfile(mockUid);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('mock_user');
+    setUser(null);
+    setProfile(null);
+    setActiveTab('dashboard');
+  };
+
+  const handleSetupProfile = (role: Role, departmentId: string) => {
+    if (!user) return;
+    const newProfile: UserProfile = {
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || 'Anonymous',
+      role,
+      departmentId,
+      createdAt: new Date().toISOString(),
+    };
+    localDb.saveUser(newProfile);
+    setProfile(newProfile);
+    setShowProfileSetup(false);
+  };
+
+  if (loading || (user && !profile && !showProfileSetup)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F5F4]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#141414]"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginView onLogin={handleLogin} />;
+  }
+
+  if (showProfileSetup) {
+    return <ProfileSetupView onSetup={handleSetupProfile} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F5F5F4] flex flex-col md:flex-row relative overflow-hidden">
+      {/* Mobile Header */}
+      {isMobile && (
+        <header className="bg-white border-b border-[#E5E5E5] p-4 flex items-center justify-between sticky top-0 z-40">
+          <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            電子表單系統
+          </h1>
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </header>
+      )}
+
+      {/* Sidebar Overlay for Mobile */}
+      <AnimatePresence>
+        {isMobile && isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed md:relative inset-y-0 left-0 z-50
+        ${isSidebarOpen ? 'w-64' : 'w-20'} 
+        bg-white border-r border-[#E5E5E5] flex flex-col transition-all duration-300 ease-in-out
+        ${isMobile && !isSidebarOpen ? '-translate-x-full' : 'translate-x-0'}
+      `}>
+        <div className={`p-6 border-b border-[#E5E5E5] flex items-center justify-between ${!isSidebarOpen && 'justify-center'}`}>
+          {isSidebarOpen ? (
+            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 overflow-hidden whitespace-nowrap">
+              <Shield className="w-6 h-6 shrink-0" />
+              電子表單系統
+            </h1>
+          ) : (
+            <Shield className="w-6 h-6" />
+          )}
+          
+          {!isMobile && (
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="absolute -right-3 top-20 bg-white border border-[#E5E5E5] rounded-full p-1 hover:bg-gray-50 shadow-sm z-50"
+            >
+              {isSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+            </button>
+          )}
+        </div>
+        
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+          <SidebarItem 
+            icon={<LayoutDashboard size={20} />} 
+            label="儀表板" 
+            active={activeTab === 'dashboard'} 
+            collapsed={!isSidebarOpen}
+            onClick={() => {
+              setActiveTab('dashboard');
+              if (isMobile) setIsSidebarOpen(false);
+            }} 
+          />
+          <SidebarItem 
+            icon={<Plus size={20} />} 
+            label="提交表單" 
+            active={activeTab === 'submit'} 
+            collapsed={!isSidebarOpen}
+            onClick={() => {
+              setActiveTab('submit');
+              if (isMobile) setIsSidebarOpen(false);
+            }} 
+          />
+          {(profile?.role === 'admin' || profile?.role === 'super_admin') && (
+            <SidebarItem 
+              icon={<FileText size={20} />} 
+              label="表單管理" 
+              active={activeTab === 'manage'} 
+              collapsed={!isSidebarOpen}
+              onClick={() => {
+                setActiveTab('manage');
+                if (isMobile) setIsSidebarOpen(false);
+              }} 
+            />
+          )}
+          {profile?.role === 'super_admin' && (
+            <SidebarItem 
+              icon={<Users size={20} />} 
+              label="帳號管理" 
+              active={activeTab === 'users'} 
+              collapsed={!isSidebarOpen}
+              onClick={() => {
+                setActiveTab('users');
+                if (isMobile) setIsSidebarOpen(false);
+              }} 
+            />
+          )}
+        </nav>
+
+        <div className="p-4 border-t border-[#E5E5E5]">
+          <div className={`flex items-center gap-3 mb-4 px-2 ${!isSidebarOpen && 'justify-center px-0'}`}>
+            <div className="w-10 h-10 shrink-0 rounded-full bg-[#141414] flex items-center justify-center text-white font-bold">
+              {profile?.displayName?.[0] || '?'}
+            </div>
+            {isSidebarOpen && (
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <p className="text-sm font-semibold truncate">{profile?.displayName}</p>
+                <p className="text-xs text-gray-500 truncate">{DEPARTMENTS.find(d => d.id === profile?.departmentId)?.name}</p>
+              </div>
+            )}
+          </div>
+          <button 
+            onClick={handleLogout}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors ${!isSidebarOpen && 'justify-center'}`}
+          >
+            <LogOut size={18} />
+            {isSidebarOpen && <span>登出</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <AnimatePresence mode="wait">
+          {activeTab === 'dashboard' && (
+            <motion.div
+              key="dashboard"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <DashboardView forms={forms} profile={profile!} showToast={showToast} />
+            </motion.div>
+          )}
+          {activeTab === 'submit' && (
+            <motion.div
+              key="submit"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <SubmitFormView profile={profile!} onComplete={() => setActiveTab('dashboard')} showToast={showToast} />
+            </motion.div>
+          )}
+          {activeTab === 'manage' && (
+            <motion.div
+              key="manage"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <ManageFormsView forms={forms} profile={profile!} showToast={showToast} />
+            </motion.div>
+          )}
+          {activeTab === 'users' && profile?.role === 'super_admin' && (
+            <motion.div
+              key="users"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <UserManagementView users={users} showToast={showToast} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className={`fixed bottom-8 left-1/2 z-[200] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border ${
+              toast.type === 'success' ? 'bg-white border-green-100 text-green-600' : 'bg-white border-red-100 text-red-600'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
+            <span className="font-bold text-sm">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function UserManagementView({ users, showToast }: { users: UserProfile[], showToast: (msg: string, type?: 'success' | 'error') => void }) {
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+
+  const handleUpdateUser = (uid: string, updates: Partial<UserProfile>) => {
+    const user = users.find(u => u.uid === uid);
+    if (user) {
+      try {
+        localDb.saveUser({ ...user, ...updates });
+        showToast('使用者資料已更新');
+        setEditingUser(null);
+      } catch (e: any) {
+        showToast(e.message || '更新失敗', 'error');
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <header>
+        <h2 className="text-3xl font-bold tracking-tight">帳號管理</h2>
+        <p className="text-gray-500 text-sm">管理系統內所有使用者的權限與單位</p>
+      </header>
+
+      <div className="bg-white rounded-3xl border border-[#E5E5E5] shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-[#E5E5E5]">
+                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">使用者</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">單位</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">權限</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">註冊時間</th>
+                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E5E5E5]">
+              {users.map(u => (
+                <tr key={u.uid} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">
+                        {u.displayName.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{u.displayName}</div>
+                        <div className="text-xs text-gray-500">{u.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-sm">
+                      {DEPARTMENTS.find(d => d.id === u.departmentId)?.name || '未知單位'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' :
+                      u.role === 'admin' ? 'bg-blue-100 text-blue-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {u.role === 'super_admin' ? '超級管理員' : u.role === 'admin' ? '單位管理者' : '一般使用者'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {new Date(u.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button 
+                      onClick={() => setEditingUser(u)}
+                      className="p-2 text-gray-400 hover:text-black hover:bg-gray-100 rounded-xl transition-all"
+                    >
+                      <Edit size={18} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold">編輯使用者權限</h3>
+                <button onClick={() => setEditingUser(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">單位</label>
+                  <select 
+                    value={editingUser.departmentId}
+                    onChange={(e) => setEditingUser({ ...editingUser, departmentId: e.target.value })}
+                    className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-black outline-none transition-all"
+                  >
+                    {DEPARTMENTS.map(dept => (
+                      <option key={dept.id} value={dept.id}>{dept.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">權限角色</label>
+                  <div className="grid grid-cols-1 gap-3">
+                    {(['user', 'admin', 'super_admin'] as Role[]).map(role => (
+                      <button
+                        key={role}
+                        onClick={() => setEditingUser({ ...editingUser, role })}
+                        className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                          editingUser.role === role ? 'border-black bg-gray-50' : 'border-gray-100 hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="text-left">
+                          <div className="font-bold text-sm">
+                            {role === 'super_admin' ? '超級管理員' : role === 'admin' ? '單位管理者' : '一般使用者'}
+                          </div>
+                          <div className="text-[10px] text-gray-500">
+                            {role === 'super_admin' ? '最高權限，可管理所有表單與帳號' : 
+                             role === 'admin' ? '可審核所屬單位及其下屬單位表單' : 
+                             '僅能提交表單與查看回傳記錄'}
+                          </div>
+                        </div>
+                        {editingUser.role === role && <CheckCircle size={20} className="text-black" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setEditingUser(null)}
+                    className="flex-1 py-4 border-2 border-gray-100 rounded-2xl font-bold hover:bg-gray-50 transition-all"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => handleUpdateUser(editingUser.uid, { role: editingUser.role, departmentId: editingUser.departmentId })}
+                    className="flex-1 py-4 bg-[#141414] text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg shadow-black/10"
+                  >
+                    儲存變更
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarItem({ icon, label, active, collapsed, onClick }: { icon: any, label: string, active: boolean, collapsed?: boolean, onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+        active 
+          ? 'bg-[#141414] text-white shadow-lg' 
+          : 'text-gray-600 hover:bg-gray-100'
+      } ${collapsed ? 'justify-center px-0' : ''}`}
+    >
+      <div className="shrink-0">{icon}</div>
+      {!collapsed && <span className="font-medium overflow-hidden whitespace-nowrap">{label}</span>}
+    </button>
+  );
+}
+
+function LoginView({ onLogin }: { onLogin: (username: string) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username) {
+      onLogin(username);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F5F5F4] flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8">
+        <div className="w-20 h-20 bg-[#141414] rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <Shield className="text-white w-10 h-10" />
+        </div>
+        <h1 className="text-3xl font-bold text-center mb-2">電子表單系統</h1>
+        <p className="text-gray-500 text-center mb-8">模擬登入模式 (輸入任何帳號密碼即可登入)</p>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
+            <div className="relative">
+              <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="請輸入帳號"
+                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+                required
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="請輸入密碼"
+                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+                required
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-[#141414] text-white py-4 rounded-2xl font-bold hover:bg-black transition-colors flex items-center justify-center gap-3"
+          >
+            登入系統
+          </button>
+        </form>
+
+        <div className="mt-8 pt-8 border-t border-gray-100">
+          <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
+            <h4 className="text-xs font-bold text-red-600 mb-2 flex items-center gap-1 uppercase tracking-wider">
+              <Shield size={14} /> 系統管理員專區
+            </h4>
+            <p className="text-[10px] text-red-400 mb-3">
+              若儲存空間已滿或需要重新開始，請使用此功能。這將清除所有帳號、表單與附件。
+            </p>
+            {!showResetConfirm ? (
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="w-full py-3 bg-white text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+              >
+                <Trash2 size={16} /> 重設系統資料 (清除所有儲存空間)
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    localDb.clearAllData();
+                    window.location.reload();
+                  }}
+                  className="w-full py-3 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <Trash2 size={16} /> 確定重設 (此動作無法復原)
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(false)}
+                  className="w-full py-2 text-[10px] text-gray-400 hover:text-gray-600 transition-all"
+                >
+                  取消
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: string) => void }) {
+  const [role, setRole] = useState<Role>('user');
+  const [dept, setDept] = useState('mgmt');
+
+  return (
+    <div className="min-h-screen bg-[#F5F5F4] flex items-center justify-center p-4">
+      <div className="max-w-xl w-full bg-white rounded-3xl shadow-xl p-6 sm:p-10">
+        <h2 className="text-xl sm:text-2xl font-bold mb-6">完成您的個人資料</h2>
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">選擇您的權限角色</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {(['user', 'admin', 'super_admin'] as Role[]).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRole(r)}
+                  className={`p-3 sm:p-4 rounded-2xl border-2 transition-all text-center ${
+                    role === r ? 'border-[#141414] bg-gray-50' : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <p className="font-bold capitalize text-sm sm:text-base">{r.replace('_', ' ')}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">選擇您的所屬單位</label>
+            <select 
+              value={dept}
+              onChange={(e) => setDept(e.target.value)}
+              className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+            >
+              {DEPARTMENTS.map(d => (
+                <option key={d.id} value={d.id}>
+                  {'  '.repeat(d.level - 1)} {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => onSetup(role, dept)}
+            className="w-full bg-[#141414] text-white py-4 rounded-2xl font-bold hover:bg-black transition-colors"
+          >
+            開始使用
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void }) {
+  const [confirmVoidId, setConfirmVoidId] = useState<string | null>(null);
+  const [confirmVoidResponse, setConfirmVoidResponse] = useState<{ formId: string, responseId: string } | null>(null);
+  const [viewingResponses, setViewingResponses] = useState<Form | null>(null);
+  const subDeptIds = getSubDepartmentIds(profile.departmentId);
+
+  const handleVoid = (id: string) => {
+    try {
+      localDb.voidForm(id, { uid: profile.uid, displayName: profile.displayName });
+      showToast('表單已作廢');
+      setConfirmVoidId(null);
+      setViewingResponses(null);
+    } catch (e: any) {
+      showToast(e.message || '作廢失敗', 'error');
+    }
+  };
+
+  const handleVoidResponse = (formId: string, responseId: string) => {
+    try {
+      localDb.voidResponse(formId, responseId, { uid: profile.uid, displayName: profile.displayName });
+      showToast('回傳檔案已作廢');
+      setConfirmVoidResponse(null);
+      // Update local state for the modal
+      if (viewingResponses && viewingResponses.id === formId) {
+        const updatedResponses = viewingResponses.responses?.map(r => 
+          r.id === responseId ? { ...r, isVoided: true, voidedAt: new Date().toISOString() } : r
+        );
+        setViewingResponses({ ...viewingResponses, responses: updatedResponses });
+      }
+    } catch (e: any) {
+      showToast(e.message || '作廢失敗', 'error');
+    }
+  };
+
+  // Filter for Dashboard: 
+  // 1. "為審核者不能出現在儀表板上"
+  // 2. "刪除時在儀表板看不到"
+  // 3. "作廢時在儀表板僅本人可見"
+  const dashboardForms = forms.filter(f => {
+    if (f.isDeleted) return false;
+    if (f.isVoided && f.authorUid !== profile.uid) return false;
+
+    // If I am the author, always show (unless deleted)
+    if (f.authorUid === profile.uid) return true;
+    
+    // If I am a reviewer (admin/super_admin) and it's pending in my scope, DON'T show on dashboard (it's in Manage)
+    if (f.status === 'pending') {
+      if (profile.role === 'super_admin') return false;
+      if (profile.role === 'admin' && subDeptIds.includes(f.departmentId)) return false;
+    }
+
+    // Otherwise show if it's my department, public, or targeted to me
+    return f.departmentId === profile.departmentId || 
+           f.isPublic || 
+           (f.targetDepartmentIds && f.targetDepartmentIds.includes(profile.departmentId));
+  });
+
+  const stats = {
+    total: dashboardForms.length,
+    pending: dashboardForms.filter(f => f.status === 'pending').length,
+    approved: dashboardForms.filter(f => f.status === 'approved').length,
+    rejected: dashboardForms.filter(f => f.status === 'rejected').length,
+  };
+
+  return (
+    <div className="space-y-8">
+      <header>
+        <h2 className="text-3xl font-bold tracking-tight">歡迎回來, {profile.displayName}</h2>
+        <p className="text-gray-500">這是您的表單概覽與最新動態</p>
+      </header>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard label="總表單數" value={stats.total} icon={<FileText className="text-blue-500" />} />
+        <StatCard label="待審核" value={stats.pending} icon={<LayoutDashboard className="text-yellow-500" />} />
+        <StatCard label="已核准" value={stats.approved} icon={<CheckCircle className="text-green-500" />} />
+        <StatCard label="已駁回" value={stats.rejected} icon={<XCircle className="text-red-500" />} />
+      </div>
+
+      <div className="bg-white rounded-3xl shadow-sm border border-[#E5E5E5] overflow-hidden">
+        <div className="p-6 border-b border-[#E5E5E5] flex justify-between items-center">
+          <h3 className="font-bold text-lg">最近的表單</h3>
+          <Building2 className="text-gray-400" />
+        </div>
+        <div className="divide-y divide-[#E5E5E5]">
+          {dashboardForms.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">尚無表單記錄</div>
+          ) : (
+            dashboardForms.map(form => (
+              <div key={form.id} className={`p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:bg-gray-50 transition-colors ${form.isVoided ? 'opacity-60 bg-gray-50/50' : ''}`}>
+                <div className="flex items-start sm:items-center gap-4 w-full lg:flex-1 min-w-0">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center ${
+                    form.isVoided ? 'bg-gray-200 text-gray-500' :
+                    form.status === 'pending' ? 'bg-yellow-100 text-yellow-600' :
+                    form.status === 'approved' ? 'bg-green-100 text-green-600' :
+                    'bg-red-100 text-red-600'
+                  }`}>
+                    <FileText size={20} className="sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold truncate">{form.title}</h4>
+                      {form.isPublic && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">
+                          公開
+                        </span>
+                      )}
+                      {!form.isPublic && form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">
+                          指定單位
+                        </span>
+                      )}
+                      {form.isVoided && (
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">
+                          已作廢
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm text-gray-500 truncate">
+                      單位: {DEPARTMENTS.find(d => d.id === form.departmentId)?.name} • 由 {form.authorName} 提交 • {new Date(form.createdAt).toLocaleDateString()}
+                    </p>
+                    {form.attachmentUrl && (
+                      <a 
+                        href={form.attachmentUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="mt-1 sm:mt-2 inline-flex items-center gap-1 text-[10px] sm:text-xs text-blue-600 hover:underline max-w-full"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Paperclip size={10} className="sm:w-3 sm:h-3" />
+                        <span className="truncate">下載附件: {form.attachmentName}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                  <ResponseUpload form={form} profile={profile} showHistory={false} showToast={showToast} onlyShowOwn={true} />
+                  {form.responses && form.responses.length > 0 && (
+                    <button 
+                      onClick={() => setViewingResponses(form)}
+                      className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+                    >
+                      <History size={14} /> 查看回傳紀錄 ({form.responses.filter(r => r.responderUid === profile.uid && !r.isVoided).length})
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Void Confirmation Modal */}
+      {confirmVoidId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
+          >
+            <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <XCircle size={32} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">確定要作廢嗎？</h3>
+            <p className="text-gray-500 text-sm mb-8">作廢後此表單將從儀表板中隱藏，但仍可在管理介面中追溯。</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmVoidId(null)}
+                className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleVoid(confirmVoidId)}
+                className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all"
+              >
+                確認作廢
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Response History Modal */}
+      <AnimatePresence>
+        {viewingResponses && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xl font-bold truncate">回傳紀錄</h3>
+                  <p className="text-xs text-gray-500 truncate">{viewingResponses.title}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {viewingResponses.authorUid === profile.uid && !viewingResponses.isVoided && (
+                    <button
+                      onClick={() => setConfirmVoidId(viewingResponses.id!)}
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold hover:bg-orange-100 transition-colors flex items-center gap-1"
+                    >
+                      <XCircle size={14} /> 作廢表單
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setViewingResponses(null)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+                {viewingResponses.responses?.filter(r => r.responderUid === profile.uid).length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">尚無回傳紀錄</div>
+                ) : (
+                  viewingResponses.responses?.filter(r => r.responderUid === profile.uid).map(resp => (
+                    <div key={resp.id} className={`flex items-center justify-between p-4 rounded-2xl border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200'}`}>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <a 
+                            href={resp.responseUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className={`text-sm font-bold flex items-center gap-1 truncate ${resp.isVoided ? 'text-gray-400' : 'text-blue-600 hover:underline'}`}
+                          >
+                            <Paperclip size={14} /> {resp.responseName}
+                          </a>
+                          {resp.isVoided && (
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                          <span className="flex items-center gap-1"><History size={10} /> {new Date(resp.respondedAt).toLocaleString()}</span>
+                          {resp.isVoided && resp.voidedAt && (
+                            <span className="text-orange-500">作廢於: {new Date(resp.voidedAt).toLocaleString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      {!resp.isVoided && (
+                        <button
+                          onClick={() => setConfirmVoidResponse({ formId: viewingResponses.id!, responseId: resp.id })}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                          title="作廢此筆回傳"
+                        >
+                          <XCircle size={18} />
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => setViewingResponses(null)}
+                  className="px-6 py-2 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all"
+                >
+                  關閉
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Void Response Confirmation Modal */}
+      <AnimatePresence>
+        {confirmVoidResponse && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <XCircle size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">確定要作廢此回傳嗎？</h3>
+              <p className="text-gray-500 text-sm mb-8">作廢後此檔案將無法恢復，但仍保留作廢紀錄。</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmVoidResponse(null)}
+                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleVoidResponse(confirmVoidResponse.formId, confirmVoidResponse.responseId)}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all"
+                >
+                  確認作廢
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function StatCard({ label, value, icon }: { label: string, value: number, icon: any }) {
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-[#E5E5E5] shadow-sm">
+      <div className="flex justify-between items-start mb-4">
+        <div className="p-3 bg-gray-50 rounded-2xl">{icon}</div>
+      </div>
+      <p className="text-gray-500 text-sm font-medium">{label}</p>
+      <p className="text-3xl font-bold mt-1">{value}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    approved: 'bg-green-100 text-green-700',
+    rejected: 'bg-red-100 text-red-700',
+    completed: 'bg-blue-100 text-blue-700',
+  };
+  const labels = {
+    pending: '審核中',
+    approved: '已核准',
+    rejected: '已駁回',
+    completed: '已完成',
+  };
+  return (
+    <span className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm font-bold whitespace-nowrap ${styles[status as keyof typeof styles]}`}>
+      {labels[status as keyof typeof labels]}
+    </span>
+  );
+}
+
+function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfile, onComplete: () => void, showToast: (msg: string, type?: 'success' | 'error') => void }) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
+  const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggleDepartment = (deptId: string) => {
+    setTargetDepartmentIds(prev => 
+      prev.includes(deptId) 
+        ? prev.filter(id => id !== deptId) 
+        : [...prev, deptId]
+    );
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title || !content) return;
+    setSubmitting(true);
+    try {
+      let attachmentUrl = '';
+      let attachmentName = '';
+
+      if (file) {
+        const result = await localDb.uploadFile(file);
+        attachmentUrl = result.url;
+        attachmentName = result.name;
+      }
+
+      localDb.addForm({
+        title,
+        content,
+        authorUid: profile.uid,
+        authorName: profile.displayName,
+        departmentId: profile.departmentId,
+        status: 'pending',
+        attachmentUrl,
+        attachmentName,
+        isPublic,
+        targetDepartmentIds: isPublic ? [] : targetDepartmentIds,
+        createdAt: new Date().toISOString(),
+      }, { uid: profile.uid, displayName: profile.displayName });
+      showToast('表單提交成功');
+      onComplete();
+    } catch (error: any) {
+      console.error("Submission failed", error);
+      showToast(error.message || '提交失敗', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <header className="mb-8">
+        <h2 className="text-3xl font-bold tracking-tight">提交新表單</h2>
+        <p className="text-gray-500">填寫下方資訊以發起新的表單申請</p>
+      </header>
+
+      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl border border-[#E5E5E5] shadow-sm space-y-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+            <input 
+              type="checkbox" 
+              id="is-public" 
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+              className="w-5 h-5 accent-[#141414]"
+            />
+            <label htmlFor="is-public" className="text-sm font-bold text-blue-900">
+              全部公開 (所有人皆可查看並下載附件)
+            </label>
+          </div>
+
+          {!isPublic && (
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <label className="block text-sm font-bold text-gray-700 mb-3">發佈給特定單位 (多選)</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {DEPARTMENTS.map(dept => (
+                  <button
+                    key={dept.id}
+                    type="button"
+                    onClick={() => toggleDepartment(dept.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                      targetDepartmentIds.includes(dept.id)
+                        ? 'bg-[#141414] text-white border-[#141414]'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    }`}
+                  >
+                    {dept.name}
+                  </button>
+                ))}
+              </div>
+              {targetDepartmentIds.length === 0 && (
+                <p className="mt-2 text-[10px] text-gray-400 italic">未選擇單位時，僅限本單位及管理員可見</p>
+              )}
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">表單標題</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="例如: 採購申請、請假單..."
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">詳細內容</label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={6}
+            placeholder="請描述表單的具體內容與事由..."
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all resize-none"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">附件上傳 (選填)</label>
+          <div className="relative">
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="hidden"
+              id="file-upload"
+            />
+            <label 
+              htmlFor="file-upload"
+              className="flex items-center gap-3 w-full p-4 rounded-2xl border-2 border-dashed border-gray-200 hover:border-[#141414] cursor-pointer transition-all"
+            >
+              <Paperclip className="text-gray-400" />
+              <span className={file ? 'text-[#141414] font-medium' : 'text-gray-400'}>
+                {file ? file.name : '點擊或拖曳檔案至此處上傳'}
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div className="pt-4">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full bg-[#141414] text-white py-4 rounded-2xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {submitting ? '提交中...' : (
+              <>
+                <Send size={20} />
+                發送申請
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [editingForm, setEditingForm] = useState<Form | null>(null);
+  const [viewingLogs, setViewingLogs] = useState<Form | null>(null);
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const subDeptIds = getSubDepartmentIds(profile.departmentId);
+
+  // Filter and Search Logic
+  const filteredForms = forms.filter(f => {
+    // Search by title or author
+    const matchesSearch = f.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         f.authorName.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Filter by status
+    const matchesStatus = statusFilter === 'all' || f.status === statusFilter;
+    
+    // Filter by deleted status (default hidden)
+    const matchesDeleted = showDeleted ? true : !f.isDeleted;
+
+    // Reviewable scope
+    const isReviewable = profile.role === 'super_admin' || subDeptIds.includes(f.departmentId);
+
+    return matchesSearch && matchesStatus && matchesDeleted && isReviewable;
+  });
+
+  const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      localDb.updateForm(id, { status }, { uid: profile.uid, displayName: profile.displayName }, status);
+      showToast(`表單已${status === 'approved' ? '核准' : '駁回'}`);
+    } catch (e: any) {
+      showToast(e.message || '更新失敗', 'error');
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    try {
+      localDb.deleteForm(id, { uid: profile.uid, displayName: profile.displayName });
+      showToast('表單已刪除');
+      setConfirmDeleteId(null);
+    } catch (e: any) {
+      showToast(e.message || '刪除失敗', 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">表單管理</h2>
+          <p className="text-gray-500">管理、搜尋與審核所有權限內的表單</p>
+        </div>
+      </header>
+
+      {/* Search and Filters */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#E5E5E5] flex flex-col md:flex-row gap-4 items-center">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="搜尋標題或提交者..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Filter size={18} className="text-gray-400" />
+          <select 
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex-1 md:w-40 p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm bg-white"
+          >
+            <option value="all">所有狀態</option>
+            <option value="pending">審核中</option>
+            <option value="approved">已核准</option>
+            <option value="rejected">已駁回</option>
+            <option value="completed">已完成</option>
+          </select>
+        </div>
+        <button 
+          onClick={() => setShowDeleted(!showDeleted)}
+          className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all text-sm font-bold ${
+            showDeleted ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-600'
+          }`}
+        >
+          {showDeleted ? <Eye size={18} /> : <EyeOff size={18} />}
+          {showDeleted ? '顯示已刪除' : '隱藏已刪除'}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-3xl shadow-sm border border-[#E5E5E5] overflow-hidden">
+        <div className="divide-y divide-[#E5E5E5]">
+          {filteredForms.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">查無符合條件的表單</div>
+          ) : (
+            filteredForms.map(form => (
+              <div key={form.id} className={`p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 ${form.isDeleted ? 'bg-red-50/30 grayscale-[0.5]' : ''}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    {(form.status === 'pending' || form.status === 'approved') && (
+                      <StatusBadge status={form.status} />
+                    )}
+                    {form.isDeleted && (
+                      <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">已刪除</span>
+                    )}
+                    {form.isVoided && (
+                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
+                    )}
+                    {form.isPublic && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">公開</span>
+                    )}
+                    {!form.isPublic && form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full" title={form.targetDepartmentIds.map(id => DEPARTMENTS.find(d => d.id === id)?.name).join(', ')}>
+                        指定單位 ({form.targetDepartmentIds.length})
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400">{new Date(form.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <h4 className="text-xl font-bold mb-2 truncate flex items-center gap-2">
+                    {form.title}
+                    <button onClick={() => setViewingLogs(form)} className="p-1 hover:bg-gray-100 rounded text-gray-400" title="查看紀錄">
+                      <History size={16} />
+                    </button>
+                  </h4>
+                  <p className="text-gray-600 mb-4 line-clamp-2">{form.content}</p>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                    <span className="flex items-center gap-1"><Users size={14} /> {form.authorName}</span>
+                    <span className="flex items-center gap-1"><Building2 size={14} /> {DEPARTMENTS.find(d => d.id === form.departmentId)?.name}</span>
+                    {form.attachmentUrl && (
+                      <a href={form.attachmentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                        <Paperclip size={14} /> {form.attachmentName}
+                      </a>
+                    )}
+                  </div>
+
+                  {form.responses && form.responses.length > 0 && (
+                    <div className="mt-4 p-3 bg-green-50 rounded-xl border border-green-100">
+                      <p className="text-[10px] font-bold text-green-600 uppercase mb-2">回傳資料 ({form.responses.length})</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {form.responses.map(resp => (
+                          <div key={resp.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-green-50'}`}>
+                            <div className="flex items-center gap-2 truncate">
+                              <a href={resp.responseUrl} target="_blank" rel="noopener noreferrer" className={`text-xs hover:underline flex items-center gap-1 truncate font-bold ${resp.isVoided ? 'text-gray-400' : 'text-green-700'}`}>
+                                <Download size={12} /> {resp.responseName}
+                              </a>
+                              {resp.isVoided && (
+                                <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[8px] font-bold rounded-full">已作廢</span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-gray-400 shrink-0">{resp.responderName}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Response Section for Reviewers removed as per request */}
+                </div>
+
+                <div className="flex flex-row lg:flex-col gap-2 shrink-0">
+                  {form.status === 'pending' && !form.isDeleted && (
+                    <>
+                      <button
+                        onClick={() => handleUpdateStatus(form.id!, 'approved')}
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <CheckCircle size={16} /> 核准
+                      </button>
+                      <button
+                        onClick={() => handleUpdateStatus(form.id!, 'rejected')}
+                        className="flex-1 px-4 py-2 border-2 border-red-100 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <XCircle size={16} /> 駁回
+                      </button>
+                    </>
+                  )}
+                  {!form.isDeleted && (
+                    <button
+                      onClick={() => setEditingForm(form)}
+                      className="flex-1 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Edit size={16} /> 編輯
+                    </button>
+                  )}
+                  {!form.isDeleted && (
+                    <button
+                      onClick={() => setConfirmDeleteId(form.id!)}
+                      className="flex-1 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Trash2 size={16} /> 刪除
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {editingForm && (
+        <EditFormModal 
+          form={editingForm} 
+          profile={profile} 
+          onClose={() => setEditingForm(null)} 
+          showToast={showToast}
+        />
+      )}
+
+      {/* Logs Modal */}
+      {viewingLogs && (
+        <LogsModal 
+          form={viewingLogs} 
+          onClose={() => setViewingLogs(null)} 
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
+          >
+            <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={32} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">確定要刪除嗎？</h3>
+            <p className="text-gray-500 text-sm mb-8">刪除後此表單將從儀表板中隱藏，但仍可在管理介面中追溯。</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeleteId)}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all"
+              >
+                確認刪除
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditFormModal({ form, profile, onClose, showToast }: { form: Form, profile: UserProfile, onClose: () => void, showToast: (msg: string, type?: 'success' | 'error') => void }) {
+  const [title, setTitle] = useState(form.title);
+  const [content, setContent] = useState(form.content);
+  const [isPublic, setIsPublic] = useState(form.isPublic || false);
+  const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>(form.targetDepartmentIds || []);
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggleDepartment = (deptId: string) => {
+    setTargetDepartmentIds(prev => 
+      prev.includes(deptId) 
+        ? prev.filter(id => id !== deptId) 
+        : [...prev, deptId]
+    );
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      localDb.updateForm(form.id!, { 
+        title, 
+        content, 
+        isPublic, 
+        targetDepartmentIds: isPublic ? [] : targetDepartmentIds 
+      }, { uid: profile.uid, displayName: profile.displayName });
+      showToast('表單已更新');
+      onClose();
+    } catch (error: any) {
+      showToast(error.message || '更新失敗', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-xl font-bold">編輯表單</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleUpdate} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">標題</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">內容</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={5}
+              className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all resize-none"
+              required
+            />
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl border border-blue-100">
+              <input 
+                type="checkbox" 
+                id="edit-is-public" 
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                className="w-4 h-4 accent-[#141414]"
+              />
+              <label htmlFor="edit-is-public" className="text-xs font-bold text-blue-900">
+                全部公開
+              </label>
+            </div>
+
+            {!isPublic && (
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-2">發佈給特定單位 (多選)</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEPARTMENTS.map(dept => (
+                    <button
+                      key={dept.id}
+                      type="button"
+                      onClick={() => toggleDepartment(dept.id)}
+                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                        targetDepartmentIds.includes(dept.id)
+                          ? 'bg-[#141414] text-white border-[#141414]'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                      }`}
+                    >
+                      {dept.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50"
+            >
+              {submitting ? '更新中...' : '儲存變更'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function LogsModal({ form, onClose }: { form: Form, onClose: () => void }) {
+  const actionLabels: Record<string, string> = {
+    create: '建立表單',
+    edit: '編輯內容',
+    delete: '刪除表單',
+    approve: '核准表單',
+    reject: '駁回表單',
+    respond: '回傳資料'
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+      >
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-xl font-bold flex items-center gap-2">
+            <History size={20} /> 操作紀錄
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-6 relative before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
+            {form.logs?.slice().reverse().map((log) => (
+              <div key={log.id} className="relative pl-10">
+                <div className={`absolute left-0 top-1 w-9 h-9 rounded-full border-4 border-white flex items-center justify-center z-10 ${
+                  log.action === 'delete' ? 'bg-red-100 text-red-600' :
+                  log.action === 'approve' ? 'bg-green-100 text-green-600' :
+                  log.action === 'reject' ? 'bg-orange-100 text-orange-600' :
+                  'bg-blue-100 text-blue-600'
+                }`}>
+                  {log.action === 'create' ? <Plus size={14} /> : 
+                   log.action === 'edit' ? <Edit size={14} /> :
+                   log.action === 'delete' ? <Trash2 size={14} /> :
+                   log.action === 'respond' ? <Upload size={14} /> :
+                   <CheckCircle size={14} />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{actionLabels[log.action] || log.action}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    執行者: {log.userName} • {new Date(log.timestamp).toLocaleString()}
+                  </p>
+                  {log.details && <p className="text-xs text-gray-400 mt-1 italic">{log.details}</p>}
+                </div>
+              </div>
+            ))}
+            {(!form.logs || form.logs.length === 0) && (
+              <div className="text-center py-8 text-gray-400">尚無紀錄</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShowOwn = false }: { form: Form, profile: UserProfile, showHistory?: boolean, showToast: (msg: string, type?: 'success' | 'error') => void, onlyShowOwn?: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const result = await localDb.uploadFile(file);
+      
+      localDb.addResponse(form.id!, {
+        responseUrl: result.url,
+        responseName: result.name,
+        responderUid: profile.uid,
+        responderName: profile.displayName,
+      }, { uid: profile.uid, displayName: profile.displayName });
+      
+      // Also update form status to completed if it was approved
+      if (form.status === 'approved') {
+        localDb.updateForm(form.id!, { status: 'completed' }, { uid: profile.uid, displayName: profile.displayName }, 'respond');
+      }
+      
+      showToast('附件上傳成功');
+      setFile(null);
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      showToast(error.message || '上傳失敗', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const displayResponses = onlyShowOwn 
+    ? (form.responses || []).filter(r => r.responderUid === profile.uid)
+    : (form.responses || []);
+
+  return (
+    <div className="w-full max-w-md">
+      {showHistory && displayResponses.length > 0 && (
+        <div className="mb-3 space-y-2">
+          {displayResponses.map(resp => (
+            <div key={resp.id} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100">
+              <div className="min-w-0">
+                <a href={resp.responseUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 truncate">
+                  <Paperclip size={10} /> {resp.responseName}
+                </a>
+                <p className="text-[8px] text-gray-400">回傳人: {resp.responderName}</p>
+              </div>
+              <CheckCircle size={12} className="text-green-500 shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <div className="flex-1 relative">
+          <input
+            type="file"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="hidden"
+            id={`response-upload-${form.id}`}
+          />
+          <label 
+            htmlFor={`response-upload-${form.id}`}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border border-gray-200 bg-white cursor-pointer hover:border-black transition-all"
+          >
+            <Paperclip size={14} className="text-gray-400" />
+            <span className="text-[10px] text-gray-500 truncate">
+              {file ? file.name : '選擇回傳檔案...'}
+            </span>
+          </label>
+        </div>
+        <button
+          onClick={handleUpload}
+          disabled={!file || uploading}
+          className="px-4 py-2 bg-[#141414] text-white rounded-xl text-[10px] font-bold hover:bg-black transition-all disabled:opacity-50 flex items-center justify-center gap-1 shrink-0"
+        >
+          <Upload size={14} />
+          {uploading ? '上傳中...' : '回傳'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CheckCircle2(props: any) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
