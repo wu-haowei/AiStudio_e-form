@@ -813,6 +813,7 @@ export default function App() {
 
 function UserManagementView({ users, showToast }: { users: UserProfile[], showToast: (msg: string, type?: 'success' | 'error') => void }) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleUpdateUser = async (uid: string, updates: Partial<UserProfile>) => {
     const user = users.find(u => u.uid === uid);
@@ -827,11 +828,82 @@ function UserManagementView({ users, showToast }: { users: UserProfile[], showTo
     }
   };
 
+  const handleExportUsers = () => {
+    try {
+      const dataStr = JSON.stringify(users, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      
+      const exportFileDefaultName = `users_export_${new Date().toISOString().split('T')[0]}.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
+      showToast('帳號資料匯出成功');
+    } catch (error) {
+      showToast('匯出失敗', 'error');
+    }
+  };
+
+  const handleImportUsers = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const content = event.target?.result as string;
+        const importedUsers = JSON.parse(content);
+
+        if (!Array.isArray(importedUsers)) {
+          throw new Error('無效的檔案格式 (應為陣列)');
+        }
+
+        let successCount = 0;
+        for (const u of importedUsers) {
+          if (u.uid && u.email && u.role) {
+            await localDb.saveUser(u);
+            successCount++;
+          }
+        }
+
+        showToast(`成功匯入 ${successCount} 筆帳號資料`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (error: any) {
+        showToast(`匯入失敗: ${error.message}`, 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-8">
-      <header>
-        <h2 className="text-3xl font-bold tracking-tight">帳號管理</h2>
-        <p className="text-gray-500 text-sm">管理系統內所有使用者的權限與單位</p>
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">帳號管理</h2>
+          <p className="text-gray-500 text-sm">管理系統內所有使用者的權限與單位</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportUsers}
+            accept=".json"
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all shadow-sm"
+          >
+            <Upload size={16} className="text-blue-600" /> 匯入帳號
+          </button>
+          <button
+            onClick={handleExportUsers}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all shadow-sm"
+          >
+            <Download size={16} className="text-green-600" /> 匯出帳號
+          </button>
+        </div>
       </header>
 
       <div className="bg-white rounded-3xl border border-[#E5E5E5] shadow-sm overflow-hidden">
