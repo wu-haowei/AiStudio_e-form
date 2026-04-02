@@ -328,7 +328,11 @@ export default function App() {
               if (isMobile) setIsSidebarOpen(false);
             }} 
           />
-          {(profile?.role === 'admin' || profile?.role === 'super_admin') && (
+          {(profile?.role === 'admin' || profile?.role === 'super_admin' || forms.some(f => 
+            f.status === 'pending' && 
+            f.workflow?.[f.currentWorkflowStepIndex || 0]?.approverType === 'user' && 
+            f.workflow?.[f.currentWorkflowStepIndex || 0]?.approverId === profile?.uid
+          )) && (
             <SidebarItem 
               icon={<FileText size={20} />} 
               label="表單管理" 
@@ -391,6 +395,7 @@ export default function App() {
                 profile={profile!} 
                 showToast={showToast} 
                 setViewingResponses={setViewingResponses}
+                setActiveTab={setActiveTab}
               />
             </motion.div>
           )}
@@ -1216,7 +1221,7 @@ function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: string) => 
   );
 }
 
-function DashboardView({ forms, profile, showToast, setViewingResponses }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void }) {
+function DashboardView({ forms, profile, showToast, setViewingResponses, setActiveTab }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void, setActiveTab: (tab: string) => void }) {
   const subDeptIds = getSubDepartmentIds(profile.departmentId);
 
   // Filter for Dashboard: 
@@ -1230,10 +1235,27 @@ function DashboardView({ forms, profile, showToast, setViewingResponses }: { for
     // If I am the author, always show (unless deleted)
     if (f.authorUid === profile.uid) return true;
     
-    // If I am a reviewer (admin/super_admin) and it's pending in my scope, DON'T show on dashboard (it's in Manage)
+    // If I am a reviewer (admin/super_admin/custom_approver) and it's pending in my scope, DON'T show on dashboard (it's in Manage)
     if (f.status === 'pending') {
-      if (profile.role === 'super_admin') return false;
-      if (profile.role === 'admin' && subDeptIds.includes(f.departmentId)) return false;
+      let isCurrentApprover = false;
+      if (f.approvalStep === ('custom' as any)) {
+        const currentStep = f.workflow?.[f.currentWorkflowStepIndex || 0];
+        isCurrentApprover = !!(currentStep && (
+          (currentStep.approverType === 'super_admin' && profile.role === 'super_admin') ||
+          (currentStep.approverType === 'dept_manager' && profile.role === 'admin' && profile.departmentId === f.departmentId) ||
+          (currentStep.approverType === 'user' && profile.uid === currentStep.approverId)
+        ));
+      } else {
+        if (f.approvalStep === 'dept_manager' && profile.role === 'admin' && profile.departmentId === f.departmentId) isCurrentApprover = true;
+        if (f.approvalStep === 'target_managers' && profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId)) isCurrentApprover = true;
+        if (f.approvalStep === 'super_admin' && profile.role === 'super_admin') isCurrentApprover = true;
+      }
+
+      if (profile.role === 'super_admin' || 
+          (profile.role === 'admin' && subDeptIds.includes(f.departmentId)) ||
+          isCurrentApprover) {
+        return false;
+      }
     }
 
     // Otherwise show if it's my department, public, or targeted to me
@@ -1267,6 +1289,22 @@ function DashboardView({ forms, profile, showToast, setViewingResponses }: { for
     }).map(r => ({ form: f, response: r }))
   );
 
+  const pendingFormApprovals = forms.filter(f => {
+    if (f.status !== 'pending') return false;
+    if (f.approvalStep === ('custom' as any)) {
+      const currentStep = f.workflow?.[f.currentWorkflowStepIndex || 0];
+      if (!currentStep) return false;
+      if (currentStep.approverType === 'super_admin' && profile.role === 'super_admin') return true;
+      if (currentStep.approverType === 'dept_manager' && profile.role === 'admin' && profile.departmentId === f.departmentId) return true;
+      if (currentStep.approverType === 'user' && profile.uid === currentStep.approverId) return true;
+    } else {
+      if (f.approvalStep === 'dept_manager' && profile.role === 'admin' && profile.departmentId === f.departmentId) return true;
+      if (f.approvalStep === 'target_managers' && profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId)) return true;
+      if (f.approvalStep === 'super_admin' && profile.role === 'super_admin') return true;
+    }
+    return false;
+  });
+
   const stats = {
     total: dashboardForms.length,
     pending: dashboardForms.filter(f => f.status === 'pending').length,
@@ -1287,6 +1325,47 @@ function DashboardView({ forms, profile, showToast, setViewingResponses }: { for
         <StatCard label="已核准" value={stats.approved} icon={<CheckCircle className="text-green-500" />} />
         <StatCard label="已駁回" value={stats.rejected} icon={<XCircle className="text-red-500" />} />
       </div>
+
+      {pendingFormApprovals.length > 0 && (
+        <div className="bg-blue-50 rounded-3xl shadow-sm border border-blue-100 overflow-hidden">
+          <div className="p-6 border-b border-blue-100 flex justify-between items-center bg-blue-100/50">
+            <h3 className="font-bold text-lg text-blue-900 flex items-center gap-2">
+              <ShieldAlert className="text-blue-600" /> 待處理的表單發佈審核
+            </h3>
+            <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+              {pendingFormApprovals.length}
+            </span>
+          </div>
+          <div className="divide-y divide-blue-100">
+            {pendingFormApprovals.map(form => (
+              <div key={form.id} className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-blue-100/30 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm">
+                    <FileText size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-blue-900">{form.title}</h4>
+                    <p className="text-xs text-blue-700">
+                      建立者: {form.authorName} • 單位: {DEPARTMENTS.find(d => d.id === form.departmentId)?.name} • {new Date(form.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-[10px] font-bold text-blue-600 mt-1">
+                      當前步驟: {form.workflow?.[form.currentWorkflowStepIndex || 0].label}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setActiveTab('manage')}
+                    className="px-4 py-2 bg-white text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                  >
+                    前往審核
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pendingResponseApprovals.length > 0 && (
         <div className="bg-orange-50 rounded-3xl shadow-sm border border-orange-100 overflow-hidden">
@@ -2146,9 +2225,17 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
     const matchesDeleted = showDeleted ? true : !f.isDeleted;
 
     // Reviewable scope
+    const currentStep = f.workflow?.[f.currentWorkflowStepIndex || 0];
+    const isCurrentApprover = f.status === 'pending' && currentStep && (
+      (currentStep.approverType === 'super_admin' && profile.role === 'super_admin') ||
+      (currentStep.approverType === 'dept_manager' && profile.role === 'admin' && profile.departmentId === f.departmentId) ||
+      (currentStep.approverType === 'user' && profile.uid === currentStep.approverId)
+    );
+
     const isReviewable = profile.role === 'super_admin' || 
                         subDeptIds.includes(f.departmentId) ||
-                        (profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId));
+                        (profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId)) ||
+                        isCurrentApprover;
 
     return matchesSearch && matchesStatus && matchesDeleted && isReviewable;
   });
