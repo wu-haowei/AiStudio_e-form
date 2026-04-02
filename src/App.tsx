@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, Department, Form, Role, FormField, FieldType, FormFieldRule, WorkflowStep } from './types';
+import { UserProfile, Department, Form, Role, FormField, FieldType, FormFieldRule, WorkflowStep, FormResponse } from './types';
 import { localDb } from './localDb';
 import { 
   LayoutDashboard, 
@@ -68,11 +68,13 @@ export default function App() {
   const [forms, setForms] = useState<Form[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'submit' | 'manage' | 'users'>('dashboard');
+  const [manageViewMode, setManageViewMode] = useState<'forms' | 'responses'>('forms');
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [viewingResponses, setViewingResponses] = useState<Form | null>(null);
   const [viewingResponsesHistory, setViewingResponsesHistory] = useState<Form | null>(null);
+  const [viewingResponseDetails, setViewingResponseDetails] = useState<{ form: Form, response: FormResponse } | null>(null);
   const [confirmVoidId, setConfirmVoidId] = useState<string | null>(null);
   const [confirmVoidResponse, setConfirmVoidResponse] = useState<{ formId: string, responseId: string } | null>(null);
 
@@ -328,22 +330,16 @@ export default function App() {
               if (isMobile) setIsSidebarOpen(false);
             }} 
           />
-          {(profile?.role === 'admin' || profile?.role === 'super_admin' || forms.some(f => 
-            f.status === 'pending' && 
-            f.workflow?.[f.currentWorkflowStepIndex || 0]?.approverType === 'user' && 
-            f.workflow?.[f.currentWorkflowStepIndex || 0]?.approverId === profile?.uid
-          )) && (
-            <SidebarItem 
-              icon={<FileText size={20} />} 
-              label="表單管理" 
-              active={activeTab === 'manage'} 
-              collapsed={!isSidebarOpen}
-              onClick={() => {
-                setActiveTab('manage');
-                if (isMobile) setIsSidebarOpen(false);
-              }} 
-            />
-          )}
+          <SidebarItem 
+            icon={<FileText size={20} />} 
+            label="表單管理" 
+            active={activeTab === 'manage'} 
+            collapsed={!isSidebarOpen}
+            onClick={() => {
+              setActiveTab('manage');
+              if (isMobile) setIsSidebarOpen(false);
+            }} 
+          />
           {profile?.role === 'super_admin' && (
             <SidebarItem 
               icon={<Users size={20} />} 
@@ -396,6 +392,7 @@ export default function App() {
                 showToast={showToast} 
                 setViewingResponses={setViewingResponses}
                 setActiveTab={setActiveTab}
+                setManageViewMode={setManageViewMode}
               />
             </motion.div>
           )}
@@ -422,6 +419,8 @@ export default function App() {
                 showToast={showToast} 
                 setViewingResponses={setViewingResponses}
                 setViewingResponsesHistory={setViewingResponsesHistory}
+                viewMode={manageViewMode}
+                setViewMode={setManageViewMode}
               />
             </motion.div>
           )}
@@ -529,6 +528,7 @@ export default function App() {
                         showHistory={false} 
                         showToast={showToast} 
                         onlyShowOwn={true} 
+                        onComplete={() => setViewingResponses(null)}
                       />
                     </div>
                   </section>
@@ -537,26 +537,21 @@ export default function App() {
                 {/* History Section */}
                 <section className="pt-6 border-t border-gray-100">
                   <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
-                    <History size={16} className="text-purple-500" /> 回傳紀錄
+                    <History size={16} className="text-purple-500" /> 檢視表單填寫資料
                   </h4>
                   <div className="space-y-3">
                     {viewingResponses.responses?.filter(r => r.responderUid === profile?.uid).length === 0 ? (
                       <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-xs">
-                        尚無您的回傳紀錄
+                        尚無您的填寫資料
                       </div>
                     ) : (
                       viewingResponses.responses?.filter(r => r.responderUid === profile?.uid).map(resp => (
                         <div key={resp.id} className={`flex items-center justify-between p-4 rounded-2xl border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200 hover:border-blue-200 transition-colors'}`}>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <a 
-                                href={resp.responseUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className={`text-sm font-bold flex items-center gap-1 truncate ${resp.isVoided ? 'text-gray-400' : 'text-blue-600 hover:underline'}`}
-                              >
-                                <Paperclip size={14} /> {resp.responseName}
-                              </a>
+                              <span className={`text-sm font-bold ${resp.isVoided ? 'text-gray-400' : 'text-gray-900'}`}>
+                                {resp.responseName || '表單回傳資料'}
+                              </span>
                               {resp.isVoided && (
                                 <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
                               )}
@@ -568,15 +563,23 @@ export default function App() {
                               )}
                             </div>
                           </div>
-                          {!resp.isVoided && (
+                          <div className="flex items-center gap-2">
                             <button
-                              onClick={() => setConfirmVoidResponse({ formId: viewingResponses.id!, responseId: resp.id })}
-                              className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                              title="作廢此筆回傳"
+                              onClick={() => setViewingResponseDetails({ form: viewingResponses, response: resp })}
+                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-1"
                             >
-                              <XCircle size={18} />
+                              <Eye size={14} /> 檢視
                             </button>
-                          )}
+                            {!resp.isVoided && (
+                              <button
+                                onClick={() => setConfirmVoidResponse({ formId: viewingResponses.id!, responseId: resp.id })}
+                                className="px-3 py-1.5 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center gap-1"
+                                title="作廢此筆回傳"
+                              >
+                                <XCircle size={14} /> 作廢
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
@@ -665,7 +668,7 @@ export default function App() {
             >
               <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                 <h3 className="text-xl font-bold flex items-center gap-2">
-                  <ClipboardList size={20} className="text-green-600" /> {viewingResponsesHistory.title} - 回傳紀錄
+                  <ClipboardList size={20} className="text-green-600" /> {viewingResponsesHistory.title} - 填寫資料
                 </h3>
                 <button onClick={() => setViewingResponsesHistory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                   <X size={20} />
@@ -688,7 +691,7 @@ export default function App() {
                     <tbody className="divide-y divide-gray-50">
                       {viewingResponsesHistory.responses?.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-8 text-center text-gray-400 italic">尚無回傳紀錄</td>
+                          <td colSpan={7} className="p-8 text-center text-gray-400 italic">尚無填寫資料</td>
                         </tr>
                       ) : (
                         viewingResponsesHistory.responses?.map(resp => {
@@ -728,7 +731,11 @@ export default function App() {
                                           <div key={field.id} className="text-[10px]">
                                             <span className="font-bold text-gray-500">{field.label}: </span>
                                             <span className="text-gray-700 whitespace-pre-wrap">
-                                              {Array.isArray(answer) ? answer.join(', ') : answer}
+                                              {field.type === 'file' && typeof answer === 'object' && answer.url ? (
+                                                <a href={answer.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                  <Paperclip size={10} /> {answer.name}
+                                                </a>
+                                              ) : Array.isArray(answer) ? answer.join(', ') : String(answer)}
                                             </span>
                                           </div>
                                         );
@@ -803,6 +810,84 @@ export default function App() {
               <div className="p-6 border-t border-gray-100 flex justify-end">
                 <button 
                   onClick={() => setViewingResponsesHistory(null)} 
+                  className="px-8 py-2.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all shadow-lg"
+                >
+                  關閉
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {viewingResponseDetails && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Eye size={20} className="text-blue-600" /> 填寫資料詳情
+                </h3>
+                <button onClick={() => setViewingResponseDetails(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-8">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">回傳者</p>
+                      <p className="text-sm font-bold">{viewingResponseDetails.response.responderName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">單位</p>
+                      <p className="text-sm font-bold">{DEPARTMENTS.find(d => d.id === viewingResponseDetails.response.responderDepartmentId)?.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">回傳時間</p>
+                      <p className="text-sm font-bold">{new Date(viewingResponseDetails.response.respondedAt).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase">狀態</p>
+                      <StatusBadge status={viewingResponseDetails.response.status} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-gray-900 border-l-4 border-blue-500 pl-3">回傳內容</h4>
+                    <div className="grid grid-cols-1 gap-4">
+                      {viewingResponseDetails.form.fields.map(field => {
+                        const answer = viewingResponseDetails.response.answers[field.id];
+                        if (answer === undefined || answer === '') return null;
+                        return (
+                          <div key={field.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                            <label className="block text-xs font-bold text-gray-500 mb-2">{field.label}</label>
+                            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                              {field.type === 'file' && typeof answer === 'object' && answer.url ? (
+                                <a href={answer.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors">
+                                  <Paperclip size={14} />
+                                  <span className="font-bold">{answer.name}</span>
+                                </a>
+                              ) : Array.isArray(answer) ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {answer.map(a => (
+                                    <span key={a} className="px-2 py-1 bg-gray-100 rounded-lg text-xs">{a}</span>
+                                  ))}
+                                </div>
+                              ) : String(answer)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => setViewingResponseDetails(null)}
                   className="px-8 py-2.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all shadow-lg"
                 >
                   關閉
@@ -1221,7 +1306,21 @@ function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: string) => 
   );
 }
 
-function DashboardView({ forms, profile, showToast, setViewingResponses, setActiveTab }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void, setActiveTab: (tab: string) => void }) {
+function DashboardView({ 
+  forms, 
+  profile, 
+  showToast, 
+  setViewingResponses, 
+  setActiveTab,
+  setManageViewMode
+}: { 
+  forms: Form[], 
+  profile: UserProfile, 
+  showToast: (msg: string, type?: 'success' | 'error') => void, 
+  setViewingResponses: (f: Form | null) => void, 
+  setActiveTab: (tab: any) => void,
+  setManageViewMode: (v: 'forms' | 'responses') => void
+}) {
   const subDeptIds = getSubDepartmentIds(profile.departmentId);
 
   // Filter for Dashboard: 
@@ -1355,7 +1454,10 @@ function DashboardView({ forms, profile, showToast, setViewingResponses, setActi
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => setActiveTab('manage')}
+                    onClick={() => {
+                      setActiveTab('manage');
+                      setManageViewMode('responses');
+                    }}
                     className="px-4 py-2 bg-white text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-600 hover:text-white transition-all shadow-sm"
                   >
                     前往審核
@@ -1396,7 +1498,10 @@ function DashboardView({ forms, profile, showToast, setViewingResponses, setActi
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => setViewingResponses(form)}
+                    onClick={() => {
+                      setActiveTab('manage');
+                      setManageViewMode('responses');
+                    }}
                     className="px-4 py-2 bg-white text-orange-700 border border-orange-200 rounded-xl text-xs font-bold hover:bg-orange-600 hover:text-white transition-all shadow-sm"
                   >
                     前往審核
@@ -1622,6 +1727,7 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                   <option value="radio">單選題</option>
                   <option value="checkbox">複選題</option>
                   <option value="select">下拉選單</option>
+                  <option value="file">檔案上傳</option>
                 </select>
               </div>
               <div className="flex items-center gap-2 px-3">
@@ -1916,7 +2022,6 @@ function WorkflowManager({ workflow, setWorkflow, fields, title = "自定義審�
 function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfile, onComplete: () => void, showToast: (msg: string, type?: 'success' | 'error') => void }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [file, setFile] = useState<File | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>([]);
   const [publishStartTime, setPublishStartTime] = useState('');
@@ -1940,15 +2045,6 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
     if (!title || !content) return;
     setSubmitting(true);
     try {
-      let attachmentUrl = '';
-      let attachmentName = '';
-
-      if (file) {
-        const result = await localDb.uploadFile(file);
-        attachmentUrl = result.url;
-        attachmentName = result.name;
-      }
-
       await localDb.addForm({
         title,
         content,
@@ -1956,8 +2052,6 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
         authorName: profile.displayName,
         departmentId: profile.departmentId,
         status: 'pending',
-        attachmentUrl,
-        attachmentName,
         isPublic,
         targetDepartmentIds: isPublic ? [] : targetDepartmentIds,
         publishStartTime: publishStartTime || undefined,
@@ -2049,27 +2143,6 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">附件上傳 (選填)</label>
-          <div className="relative">
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-              id="file-upload"
-            />
-            <label 
-              htmlFor="file-upload"
-              className="flex items-center gap-3 w-full p-4 rounded-2xl border-2 border-dashed border-gray-200 hover:border-[#141414] cursor-pointer transition-all"
-            >
-              <Paperclip className="text-gray-400" />
-              <span className={file ? 'text-[#141414] font-medium' : 'text-gray-400'}>
-                {file ? file.name : '點擊或拖曳檔案至此處上傳'}
-              </span>
-            </label>
-          </div>
-        </div>
-
         <div className="pt-4 border-t border-gray-100">
           <FormFieldManager fields={fields} setFields={setFields} />
         </div>
@@ -2153,6 +2226,11 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
                       ))}
                     </div>
                   )}
+                  {field.type === 'file' && (
+                    <div className="p-3 bg-gray-100 rounded-xl border border-dashed border-gray-300 text-center text-xs text-gray-500">
+                      檔案上傳欄位不支援預設值
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -2199,13 +2277,30 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
   );
 }
 
-function ManageFormsView({ forms, profile, showToast, setViewingResponses, setViewingResponsesHistory }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void, setViewingResponsesHistory: (f: Form | null) => void }) {
+function ManageFormsView({ 
+  forms, 
+  profile, 
+  showToast, 
+  setViewingResponses, 
+  setViewingResponsesHistory,
+  viewMode,
+  setViewMode
+}: { 
+  forms: Form[], 
+  profile: UserProfile, 
+  showToast: (msg: string, type?: 'success' | 'error') => void, 
+  setViewingResponses: (f: Form | null) => void, 
+  setViewingResponsesHistory: (f: Form | null) => void,
+  viewMode: 'forms' | 'responses',
+  setViewMode: (v: 'forms' | 'responses') => void
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showDeleted, setShowDeleted] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [viewingLogs, setViewingLogs] = useState<Form | null>(null);
   const [rejectingFormId, setRejectingFormId] = useState<string | null>(null);
+  const [rejectingResponse, setRejectingResponse] = useState<{ formId: string, responseId: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -2233,11 +2328,28 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
     );
 
     const isReviewable = profile.role === 'super_admin' || 
-                        subDeptIds.includes(f.departmentId) ||
+                        (profile.role === 'admin' && subDeptIds.includes(f.departmentId)) ||
                         (profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId)) ||
+                        f.authorUid === profile.uid ||
                         isCurrentApprover;
 
     return matchesSearch && matchesStatus && matchesDeleted && isReviewable;
+  });
+
+  const pendingResponseApprovals = forms.flatMap(f => 
+    (f.responses || []).filter(r => {
+      if (r.status !== 'pending') return false;
+      const currentStep = r.workflow?.[r.currentWorkflowStepIndex || 0];
+      if (!currentStep) return false;
+      if (currentStep.approverType === 'super_admin' && profile.role === 'super_admin') return true;
+      if (currentStep.approverType === 'dept_manager' && profile.role === 'admin' && profile.departmentId === r.responderDepartmentId) return true;
+      if (currentStep.approverType === 'user' && profile.uid === currentStep.approverId) return true;
+      return false;
+    }).map(r => ({ form: f, response: r }))
+  ).filter(item => {
+    const matchesSearch = item.form.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         item.response.responderName.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
   });
 
   const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
@@ -2252,6 +2364,7 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
         showToast(`表單已核准`);
       } else {
         setRejectingFormId(id);
+        setRejectingResponse(null);
         setRejectReason('');
       }
     } catch (e: any) {
@@ -2259,19 +2372,47 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
     }
   };
 
-  const handleConfirmReject = async () => {
-    if (!rejectingFormId) return;
+  const handleApproveResponse = async (formId: string, responseId: string) => {
     try {
-      await localDb.rejectForm(rejectingFormId, { 
-        uid: profile.uid, 
-        displayName: profile.displayName, 
-        role: profile.role 
-      }, rejectReason || '無原因');
-      showToast(`表單已駁回`);
-      setRejectingFormId(null);
-      setRejectReason('');
+      await localDb.approveResponse(formId, responseId, {
+        uid: profile.uid,
+        displayName: profile.displayName,
+        role: profile.role,
+        departmentId: profile.departmentId
+      });
+      showToast('回傳資料已核准');
     } catch (e: any) {
-      showToast(e.message || '駁回失敗', 'error');
+      showToast(e.message || '核准失敗', 'error');
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (rejectingFormId) {
+      try {
+        await localDb.rejectForm(rejectingFormId, { 
+          uid: profile.uid, 
+          displayName: profile.displayName, 
+          role: profile.role 
+        }, rejectReason || '無原因');
+        showToast(`表單已駁回`);
+        setRejectingFormId(null);
+        setRejectReason('');
+      } catch (e: any) {
+        showToast(e.message || '駁回失敗', 'error');
+      }
+    } else if (rejectingResponse) {
+      try {
+        await localDb.rejectResponse(rejectingResponse.formId, rejectingResponse.responseId, {
+          uid: profile.uid,
+          displayName: profile.displayName,
+          role: profile.role
+        }, rejectReason || '無原因');
+        showToast('回傳資料已駁回');
+        setRejectingResponse(null);
+        setRejectReason('');
+      } catch (e: any) {
+        showToast(e.message || '駁回失敗', 'error');
+      }
     }
   };
 
@@ -2290,7 +2431,30 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">表單管理</h2>
-          <p className="text-gray-500">管理、搜尋與審核所有權限內的表單</p>
+          <p className="text-gray-500">管理、搜尋與審核所有權限內的表單與回傳</p>
+        </div>
+        <div className="flex bg-gray-100 p-1 rounded-2xl">
+          <button
+            onClick={() => setViewMode('forms')}
+            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+              viewMode === 'forms' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            表單發佈審核
+          </button>
+          <button
+            onClick={() => setViewMode('responses')}
+            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'responses' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            回傳資料審核
+            {pendingResponseApprovals.length > 0 && (
+              <span className="bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                {pendingResponseApprovals.length}
+              </span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -2300,142 +2464,145 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
-            placeholder="搜尋標題或提交者..."
+            placeholder={viewMode === 'forms' ? "搜尋標題或提交者..." : "搜尋表單標題或回傳者..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm"
           />
         </div>
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <Filter size={18} className="text-gray-400" />
-          <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="flex-1 md:w-40 p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm bg-white"
+        {viewMode === 'forms' && (
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Filter size={18} className="text-gray-400" />
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="flex-1 md:w-40 p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm bg-white"
+            >
+              <option value="all">所有狀態</option>
+              <option value="pending">審核中</option>
+              <option value="approved">已核准</option>
+              <option value="rejected">已駁回</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+        )}
+        {viewMode === 'forms' && (
+          <button 
+            onClick={() => setShowDeleted(!showDeleted)}
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all text-sm font-bold ${
+              showDeleted ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-600'
+            }`}
           >
-            <option value="all">所有狀態</option>
-            <option value="pending">審核中</option>
-            <option value="approved">已核准</option>
-            <option value="rejected">已駁回</option>
-            <option value="completed">已完成</option>
-          </select>
-        </div>
-        <button 
-          onClick={() => setShowDeleted(!showDeleted)}
-          className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all text-sm font-bold ${
-            showDeleted ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-600'
-          }`}
-        >
-          {showDeleted ? <Eye size={18} /> : <EyeOff size={18} />}
-          {showDeleted ? '顯示已刪除' : '隱藏已刪除'}
-        </button>
+            {showDeleted ? <Eye size={18} /> : <EyeOff size={18} />}
+            {showDeleted ? '顯示已刪除' : '隱藏已刪除'}
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-[#E5E5E5] overflow-hidden">
         <div className="divide-y divide-[#E5E5E5]">
-          {filteredForms.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">查無符合條件的表單</div>
-          ) : (
-            filteredForms.map(form => (
-              <div key={form.id} className={`p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 ${form.isDeleted ? 'bg-red-50/30 grayscale-[0.5]' : ''}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <StatusBadge status={form.status} />
-                    {form.isDeleted && (
-                      <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">已刪除</span>
-                    )}
-                    {form.isVoided && (
-                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
-                    )}
-                    {form.isPublic && (
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">公開</span>
-                    )}
-                    {!form.isPublic && form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full" title={form.targetDepartmentIds.map(id => DEPARTMENTS.find(d => d.id === id)?.name).join(', ')}>
-                        指定單位 ({form.targetDepartmentIds.length})
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400">{new Date(form.createdAt).toLocaleDateString()}</span>
-                  </div>
+          {viewMode === 'forms' ? (
+            filteredForms.length === 0 ? (
+              <div className="p-12 text-center text-gray-400">查無符合條件的表單</div>
+            ) : (
+              filteredForms.map(form => (
+                <div key={form.id} className={`p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 ${form.isDeleted ? 'bg-red-50/30 grayscale-[0.5]' : ''}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <StatusBadge status={form.status} />
+                      {form.isDeleted && (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">已刪除</span>
+                      )}
+                      {form.isVoided && (
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
+                      )}
+                      {form.isPublic && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">公開</span>
+                      )}
+                      {!form.isPublic && form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full" title={form.targetDepartmentIds.map(id => DEPARTMENTS.find(d => d.id === id)?.name).join(', ')}>
+                          指定單位 ({form.targetDepartmentIds.length})
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">{new Date(form.createdAt).toLocaleDateString()}</span>
+                    </div>
 
-                  {/* Approval Status */}
-                  {form.status === 'pending' && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200 text-[10px]">
-                      <p className="font-bold text-gray-700 mb-2 flex items-center gap-1">
-                        <Shield size={12} /> 審核進度: {
-                          form.approvalStep === ('custom' as any) ? `自定義流程 (${form.workflow?.[form.currentWorkflowStepIndex || 0]?.label})` :
-                          form.approvalStep === 'dept_manager' ? '單位主管審核中' :
-                          form.approvalStep === 'target_managers' ? '跨部門主管審核中' :
-                          form.approvalStep === 'super_admin' ? '總管理者審核中' : '已完成'
-                        }
-                      </p>
-                      {form.approvalStep === ('custom' as any) ? (
-                        <div className="flex flex-wrap gap-2">
-                          {form.workflow?.map((step, idx) => {
-                            const isCurrent = idx === (form.currentWorkflowStepIndex || 0);
-                            const isPast = idx < (form.currentWorkflowStepIndex || 0);
-                            return (
-                              <div key={step.id} className="flex items-center gap-1">
-                                {isPast ? <CheckCircle size={10} className="text-green-500" /> : 
-                                 isCurrent ? <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" /> :
-                                 <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
-                                <span className={isPast ? 'text-green-700' : isCurrent ? 'text-blue-700 font-bold' : 'text-gray-500'}>
-                                  {step.label}
-                                </span>
-                                {idx < form.workflow!.length - 1 && <ChevronRight size={8} className="text-gray-300" />}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-x-4 gap-y-1">
-                          <div className="flex items-center gap-1">
-                            {form.deptManagerApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
-                            <span className={form.deptManagerApproved ? 'text-green-700' : 'text-gray-500'}>原單位主管</span>
+                    {/* Approval Status */}
+                    {form.status === 'pending' && (
+                      <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200 text-[10px]">
+                        <p className="font-bold text-gray-700 mb-2 flex items-center gap-1">
+                          <Shield size={12} /> 審核進度: {
+                            form.approvalStep === ('custom' as any) ? `自定義流程 (${form.workflow?.[form.currentWorkflowStepIndex || 0]?.label})` :
+                            form.approvalStep === 'dept_manager' ? '單位主管審核中' :
+                            form.approvalStep === 'target_managers' ? '跨部門主管審核中' :
+                            form.approvalStep === 'super_admin' ? '總管理者審核中' : '已完成'
+                          }
+                        </p>
+                        {form.approvalStep === ('custom' as any) ? (
+                          <div className="flex flex-wrap gap-2">
+                            {form.workflow?.map((step, idx) => {
+                              const isCurrent = idx === (form.currentWorkflowStepIndex || 0);
+                              const isPast = idx < (form.currentWorkflowStepIndex || 0);
+                              return (
+                                <div key={step.id} className="flex items-center gap-1">
+                                  {isPast ? <CheckCircle size={10} className="text-green-500" /> : 
+                                   isCurrent ? <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" /> :
+                                   <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                                  <span className={isPast ? 'text-green-700' : isCurrent ? 'text-blue-700 font-bold' : 'text-gray-500'}>
+                                    {step.label}
+                                  </span>
+                                  {idx < form.workflow!.length - 1 && <ChevronRight size={8} className="text-gray-300" />}
+                                </div>
+                              );
+                            })}
                           </div>
-                          {form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
-                            <div className="flex flex-wrap gap-x-4 gap-y-1">
-                              {form.targetDepartmentIds.map(tid => {
-                                const isApproved = form.approvals?.[tid];
-                                return (
-                                  <div key={tid} className="flex items-center gap-1">
-                                    {isApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
-                                    <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{DEPARTMENTS.find(d => d.id === tid)?.name}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {(form.isPublic || form.approvalStep === 'super_admin' || form.superAdminApproved) && (
+                        ) : (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
                             <div className="flex items-center gap-1">
-                              {form.superAdminApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
-                              <span className={form.superAdminApproved ? 'text-green-700' : 'text-gray-500'}>總管理者</span>
+                              {form.deptManagerApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                              <span className={form.deptManagerApproved ? 'text-green-700' : 'text-gray-500'}>原單位主管</span>
                             </div>
-                          )}
-                        </div>
+                            {form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                {form.targetDepartmentIds.map(tid => {
+                                  const isApproved = form.approvals?.[tid];
+                                  return (
+                                    <div key={tid} className="flex items-center gap-1">
+                                      {isApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                                      <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{DEPARTMENTS.find(d => d.id === tid)?.name}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {(form.isPublic || form.approvalStep === 'super_admin' || form.superAdminApproved) && (
+                              <div className="flex items-center gap-1">
+                                {form.superAdminApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                                <span className={form.superAdminApproved ? 'text-green-700' : 'text-gray-500'}>總管理者</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <h4 className="text-xl font-bold mb-2 truncate flex items-center gap-2">
+                      {form.title}
+                      <button onClick={() => setViewingLogs(form)} className="p-1 hover:bg-gray-100 rounded text-gray-400" title="查看紀錄">
+                        <History size={16} />
+                      </button>
+                    </h4>
+                    <p className="text-gray-600 mb-4 line-clamp-2">{form.content}</p>
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                      <span className="flex items-center gap-1"><Users size={14} /> {form.authorName}</span>
+                      <span className="flex items-center gap-1"><Building2 size={14} /> {DEPARTMENTS.find(d => d.id === form.departmentId)?.name}</span>
+                      {form.attachmentUrl && (
+                        <a href={form.attachmentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                          <Paperclip size={14} /> {form.attachmentName}
+                        </a>
                       )}
                     </div>
-                  )}
-
-                  <h4 className="text-xl font-bold mb-2 truncate flex items-center gap-2">
-                    {form.title}
-                    <button onClick={() => setViewingLogs(form)} className="p-1 hover:bg-gray-100 rounded text-gray-400" title="查看紀錄">
-                      <History size={16} />
-                    </button>
-                  </h4>
-                  <p className="text-gray-600 mb-4 line-clamp-2">{form.content}</p>
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-                    <span className="flex items-center gap-1"><Users size={14} /> {form.authorName}</span>
-                    <span className="flex items-center gap-1"><Building2 size={14} /> {DEPARTMENTS.find(d => d.id === form.departmentId)?.name}</span>
-                    {form.attachmentUrl && (
-                      <a href={form.attachmentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
-                        <Paperclip size={14} /> {form.attachmentName}
-                      </a>
-                    )}
                   </div>
-
-                  {/* Response Section for Reviewers removed as per request */}
-                </div>
 
                   <div className="flex flex-row lg:flex-col gap-2 shrink-0">
                     {form.status === 'pending' && !form.isDeleted && (
@@ -2486,54 +2653,138 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
                         )}
                       </>
                     )}
-                  {!form.isDeleted && (
-                    <button
-                      onClick={() => setViewingResponsesHistory(form)}
-                      className="flex-1 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <ClipboardList size={16} /> 回傳紀錄
-                    </button>
-                  )}
-                  {!form.isDeleted && (
-                    <button
-                      onClick={() => setViewingLogs(form)}
-                      className="flex-1 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <History size={16} /> 審核歷程
-                    </button>
-                  )}
-                  {!form.isDeleted && (
-                    <button
-                      onClick={() => setEditingForm(form)}
-                      className="flex-1 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Edit size={16} /> 編輯
-                    </button>
-                  )}
-                  {!form.isDeleted && (
-                    <button
-                      onClick={() => setConfirmDeleteId(form.id!)}
-                      className="flex-1 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Trash2 size={16} /> 刪除
-                    </button>
-                  )}
+                    {!form.isDeleted && (
+                      <button
+                        onClick={() => setViewingResponsesHistory(form)}
+                        className="flex-1 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <ClipboardList size={16} /> 檢視表單填寫資料
+                      </button>
+                    )}
+                    {!form.isDeleted && (
+                      <button
+                        onClick={() => setViewingLogs(form)}
+                        className="flex-1 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <History size={16} /> 審核歷程
+                      </button>
+                    )}
+                    {!form.isDeleted && (
+                      <button
+                        onClick={() => setEditingForm(form)}
+                        className="flex-1 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Edit size={16} /> 編輯
+                      </button>
+                    )}
+                    {!form.isDeleted && (
+                      <button
+                        onClick={() => setConfirmDeleteId(form.id!)}
+                        className="flex-1 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Trash2 size={16} /> 刪除
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))
+            )
+          ) : (
+            pendingResponseApprovals.length === 0 ? (
+              <div className="p-12 text-center text-gray-400">尚無待處理的回傳資料審核</div>
+            ) : (
+              pendingResponseApprovals.map(({ form, response }) => (
+                <div key={response.id} className="p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <StatusBadge status={response.status} />
+                      <span className="text-xs text-gray-400">{new Date(response.respondedAt).toLocaleDateString()}</span>
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-full">
+                        表單: {form.title}
+                      </span>
+                    </div>
+
+                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200 text-[10px]">
+                      <p className="font-bold text-gray-700 mb-2 flex items-center gap-1">
+                        <Shield size={12} /> 審核步驟: {response.workflow?.[response.currentWorkflowStepIndex || 0]?.label}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {response.workflow?.map((step, idx) => {
+                          const isCurrent = idx === (response.currentWorkflowStepIndex || 0);
+                          const isPast = idx < (response.currentWorkflowStepIndex || 0);
+                          return (
+                            <div key={step.id} className="flex items-center gap-1">
+                              {isPast ? <CheckCircle size={10} className="text-green-500" /> : 
+                               isCurrent ? <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" /> :
+                               <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                              <span className={isPast ? 'text-green-700' : isCurrent ? 'text-blue-700 font-bold' : 'text-gray-500'}>
+                                {step.label}
+                              </span>
+                              {idx < response.workflow!.length - 1 && <ChevronRight size={8} className="text-gray-300" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <h4 className="text-xl font-bold mb-2 truncate">
+                      回傳者: {response.responderName}
+                    </h4>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      {form.fields.map(field => {
+                        const answer = response.answers[field.id];
+                        if (answer === undefined || answer === '') return null;
+                        return (
+                          <div key={field.id} className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">{field.label}</label>
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {field.type === 'file' && typeof answer === 'object' && answer.url ? (
+                                <a href={answer.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                  <Paperclip size={12} /> {answer.name}
+                                </a>
+                              ) : Array.isArray(answer) ? answer.join(', ') : String(answer)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-row lg:flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => handleApproveResponse(form.id!, response.id)}
+                      className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={18} /> 核准回傳
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRejectingResponse({ formId: form.id!, responseId: response.id });
+                        setRejectingFormId(null);
+                        setRejectReason('');
+                      }}
+                      className="flex-1 px-6 py-3 border-2 border-red-100 text-red-600 rounded-xl text-sm font-bold hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <XCircle size={18} /> 駁回回傳
+                    </button>
+                  </div>
+                </div>
+              ))
+            )
           )}
         </div>
       </div>
 
       {/* Reject Reason Modal */}
-      {rejectingFormId && (
+      {(rejectingFormId || rejectingResponse) && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8"
           >
-            <h3 className="text-xl font-bold mb-4">駁回表單</h3>
+            <h3 className="text-xl font-bold mb-4">{rejectingFormId ? '駁回表單' : '駁回回傳'}</h3>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
@@ -2542,7 +2793,11 @@ function ManageFormsView({ forms, profile, showToast, setViewingResponses, setVi
             />
             <div className="flex gap-3">
               <button
-                onClick={() => setRejectingFormId(null)}
+                onClick={() => {
+                  setRejectingFormId(null);
+                  setRejectingResponse(null);
+                  setRejectReason('');
+                }}
                 className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all text-sm"
               >
                 取消
@@ -2820,6 +3075,11 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
                           ))}
                         </div>
                       )}
+                      {field.type === 'file' && (
+                        <div className="p-2 bg-gray-100 rounded-lg border border-dashed border-gray-300 text-center text-[10px] text-gray-500">
+                          檔案上傳欄位不支援預設值
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2909,8 +3169,7 @@ function LogsModal({ form, onClose }: { form: Form, onClose: () => void }) {
   );
 }
 
-function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShowOwn = false }: { form: Form, profile: UserProfile, showHistory?: boolean, showToast: (msg: string, type?: 'success' | 'error') => void, onlyShowOwn?: boolean }) {
-  const [file, setFile] = useState<File | null>(null);
+function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShowOwn = false, onComplete }: { form: Form, profile: UserProfile, showHistory?: boolean, showToast: (msg: string, type?: 'success' | 'error') => void, onlyShowOwn?: boolean, onComplete?: () => void }) {
   const [answers, setAnswers] = useState<{ [fieldId: string]: any }>({});
   const [uploading, setUploading] = useState(false);
 
@@ -2954,22 +3213,27 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
 
     setUploading(true);
     try {
-      let result = { url: '', name: '' };
-      if (file) {
-        result = await localDb.uploadFile(file);
+      const finalAnswers = { ...answers };
+      
+      // Upload files for dynamic fields
+      for (const field of form.fields || []) {
+        if (field.type === 'file' && answers[field.id] instanceof File) {
+          const res = await localDb.uploadFile(answers[field.id]);
+          finalAnswers[field.id] = { url: res.url, name: res.name };
+        }
       }
       
       await localDb.addResponse(form.id!, {
-        responseUrl: result.url,
-        responseName: result.name,
+        responseUrl: '',
+        responseName: '',
         responderUid: profile.uid,
         responderName: profile.displayName,
-        answers,
+        answers: finalAnswers,
       }, { uid: profile.uid, displayName: profile.displayName, departmentId: profile.departmentId });
       
       showToast('回傳成功');
-      setFile(null);
       setAnswers({});
+      if (onComplete) onComplete();
     } catch (error: any) {
       console.error("Upload failed", error);
       showToast(error.message || '上傳失敗', 'error');
@@ -3120,37 +3384,30 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                       )}
                     </div>
                   )}
+
+                  {field.type === 'file' && (
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAnswers({ ...answers, [field.id]: file });
+                        }}
+                        className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
+                      />
+                      {answers[field.id] instanceof File && (
+                        <p className="text-[10px] text-blue-600 font-bold flex items-center gap-1">
+                          <Paperclip size={10} /> 已選擇: {answers[field.id].name}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       )}
-
-      <div className="space-y-4">
-        <h5 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-          <Paperclip size={16} className="text-green-500" /> 附件上傳 (選填)
-        </h5>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 relative">
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-              id={`response-upload-${form.id}`}
-            />
-            <label 
-              htmlFor={`response-upload-${form.id}`}
-              className="flex items-center gap-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-white cursor-pointer hover:border-black transition-all"
-            >
-              <Paperclip size={16} className="text-gray-400" />
-              <span className="text-sm text-gray-500 truncate">
-                {file ? file.name : '選擇回傳檔案...'}
-              </span>
-            </label>
-          </div>
-        </div>
-      </div>
 
       <button
         onClick={handleUpload}
@@ -3163,7 +3420,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
 
       {showHistory && displayResponses.length > 0 && (
         <div className="pt-6 border-t border-gray-100">
-          <h5 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">您的回傳紀錄</h5>
+          <h5 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">您的填寫資料</h5>
           <div className="space-y-2">
             {displayResponses.map(resp => (
               <div key={resp.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">

@@ -16,7 +16,7 @@ export interface Department {
   level: number;
 }
 
-export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'textarea' | 'select';
+export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'textarea' | 'select' | 'file';
 
 export interface FormFieldRule {
   id: string;
