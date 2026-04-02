@@ -22,6 +22,7 @@ export interface FormResponse {
   responseName: string;
   responderUid: string;
   responderName: string;
+  responderDepartmentId: string;
   respondedAt: string;
   isVoided?: boolean;
   voidedAt?: string;
@@ -55,4 +56,11 @@ export interface Form {
   voidedAt?: string;
   logs?: FormLog[];
   createdAt: string;
+  publishStartTime?: string;
+  publishEndTime?: string;
+  // Approval Workflow
+  approvals?: { [deptId: string]: boolean }; // Track approvals from target departments
+  deptManagerApproved?: boolean; // Approval from the author's department manager
+  superAdminApproved?: boolean; // Approval from the Super Admin
+  approvalStep?: 'dept_manager' | 'target_managers' | 'super_admin' | 'completed';
 }

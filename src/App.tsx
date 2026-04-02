@@ -29,7 +29,8 @@ import {
   Filter,
   History,
   Eye,
-  EyeOff
+  EyeOff,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -68,6 +69,39 @@ export default function App() {
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [viewingResponses, setViewingResponses] = useState<Form | null>(null);
+  const [viewingResponsesHistory, setViewingResponsesHistory] = useState<Form | null>(null);
+  const [confirmVoidId, setConfirmVoidId] = useState<string | null>(null);
+  const [confirmVoidResponse, setConfirmVoidResponse] = useState<{ formId: string, responseId: string } | null>(null);
+
+  const handleVoid = async (id: string) => {
+    if (!profile) return;
+    try {
+      await localDb.voidForm(id, { uid: profile.uid, displayName: profile.displayName });
+      showToast('表單已作廢');
+      setConfirmVoidId(null);
+      setViewingResponses(null);
+    } catch (e: any) {
+      showToast(e.message || '作廢失敗', 'error');
+    }
+  };
+
+  const handleVoidResponse = async (formId: string, responseId: string) => {
+    if (!profile) return;
+    try {
+      await localDb.voidResponse(formId, responseId, { uid: profile.uid, displayName: profile.displayName });
+      showToast('回傳檔案已作廢');
+      setConfirmVoidResponse(null);
+      if (viewingResponses && viewingResponses.id === formId) {
+        const updatedResponses = viewingResponses.responses?.map(r => 
+          r.id === responseId ? { ...r, isVoided: true, voidedAt: new Date().toISOString() } : r
+        );
+        setViewingResponses({ ...viewingResponses, responses: updatedResponses });
+      }
+    } catch (e: any) {
+      showToast(e.message || '作廢失敗', 'error');
+    }
+  };
 
   // Responsive Listener
   useEffect(() => {
@@ -91,12 +125,11 @@ export default function App() {
 
   // Auth Listener (Local)
   useEffect(() => {
-    const initAuth = () => {
-      const savedUser = localStorage.getItem('mock_user');
+    const initAuth = async () => {
+      const savedUser = await localDb.getMockUser();
       if (savedUser) {
-        const u = JSON.parse(savedUser) as MockUser;
-        setUser(u);
-        fetchProfile(u.uid);
+        setUser(savedUser);
+        fetchProfile(savedUser.uid);
       } else {
         setLoading(false);
       }
@@ -104,8 +137,8 @@ export default function App() {
     initAuth();
   }, []);
 
-  const fetchProfile = (uid: string) => {
-    const userProfile = localDb.getUser(uid);
+  const fetchProfile = async (uid: string) => {
+    const userProfile = await localDb.getUser(uid);
     if (userProfile) {
       setProfile(userProfile);
       setShowProfileSetup(false);
@@ -119,9 +152,9 @@ export default function App() {
   useEffect(() => {
     if (!user || !profile) return;
 
-    const updateForms = () => {
-      const allForms = localDb.getForms();
-      const allUsers = localDb.getUsers();
+    const updateForms = async () => {
+      const allForms = await localDb.getForms();
+      const allUsers = await localDb.getUsers();
       setUsers(allUsers);
 
       const sortedForms = allForms.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -148,7 +181,7 @@ export default function App() {
     return () => window.removeEventListener('local-db-update', updateForms);
   }, [user, profile]);
 
-  const handleLogin = (username: string) => {
+  const handleLogin = async (username: string) => {
     const mockUid = `mock_${username.toLowerCase()}`;
     const u: MockUser = {
       uid: mockUid,
@@ -157,19 +190,19 @@ export default function App() {
     };
     
     setLoading(true);
-    localStorage.setItem('mock_user', JSON.stringify(u));
+    await localDb.setMockUser(u);
     setUser(u);
     fetchProfile(mockUid);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('mock_user');
+  const handleLogout = async () => {
+    await localDb.clearMockUser();
     setUser(null);
     setProfile(null);
     setActiveTab('dashboard');
   };
 
-  const handleSetupProfile = (role: Role, departmentId: string) => {
+  const handleSetupProfile = async (role: Role, departmentId: string) => {
     if (!user) return;
     const newProfile: UserProfile = {
       uid: user.uid,
@@ -179,7 +212,7 @@ export default function App() {
       departmentId,
       createdAt: new Date().toISOString(),
     };
-    localDb.saveUser(newProfile);
+    await localDb.saveUser(newProfile);
     setProfile(newProfile);
     setShowProfileSetup(false);
   };
@@ -337,7 +370,12 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <DashboardView forms={forms} profile={profile!} showToast={showToast} />
+              <DashboardView 
+                forms={forms} 
+                profile={profile!} 
+                showToast={showToast} 
+                setViewingResponses={setViewingResponses}
+              />
             </motion.div>
           )}
           {activeTab === 'submit' && (
@@ -357,7 +395,13 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <ManageFormsView forms={forms} profile={profile!} showToast={showToast} />
+              <ManageFormsView 
+                forms={forms} 
+                profile={profile!} 
+                showToast={showToast} 
+                setViewingResponses={setViewingResponses}
+                setViewingResponsesHistory={setViewingResponsesHistory}
+              />
             </motion.div>
           )}
           {activeTab === 'users' && profile?.role === 'super_admin' && (
@@ -389,6 +433,281 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Shared Modals */}
+      <AnimatePresence>
+        {viewingResponses && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <StatusBadge status={viewingResponses.status} />
+                    <h3 className="text-xl font-bold truncate">{viewingResponses.title}</h3>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    由 {viewingResponses.authorName} ({DEPARTMENTS.find(d => d.id === viewingResponses.departmentId)?.name}) 於 {new Date(viewingResponses.createdAt).toLocaleDateString()} 提交
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {viewingResponses.authorUid === profile?.uid && !viewingResponses.isVoided && (
+                    <button
+                      onClick={() => setConfirmVoidId(viewingResponses.id!)}
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold hover:bg-orange-100 transition-colors flex items-center gap-1"
+                    >
+                      <XCircle size={14} /> 作廢表單
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setViewingResponses(null)}
+                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Content Section */}
+                <section>
+                  <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                    <FileText size={16} className="text-blue-500" /> 表單內文
+                  </h4>
+                  <div className="bg-gray-50 rounded-2xl p-5 text-gray-700 text-sm leading-relaxed whitespace-pre-wrap border border-gray-100">
+                    {viewingResponses.content}
+                  </div>
+                  {viewingResponses.attachmentUrl && (
+                    <div className="mt-4">
+                      <a 
+                        href={viewingResponses.attachmentUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors"
+                      >
+                        <Download size={14} /> 下載原始附件: {viewingResponses.attachmentName}
+                      </a>
+                    </div>
+                  )}
+                </section>
+
+                {/* Upload Section */}
+                {!viewingResponses.isVoided && viewingResponses.status === 'approved' && (
+                  <section className="pt-6 border-t border-gray-100">
+                    <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                      <Upload size={16} className="text-green-500" /> 回傳附件
+                    </h4>
+                    <div className="bg-green-50/30 rounded-2xl p-5 border border-green-100/50">
+                      <ResponseUpload 
+                        form={viewingResponses} 
+                        profile={profile!} 
+                        showHistory={false} 
+                        showToast={showToast} 
+                        onlyShowOwn={true} 
+                      />
+                    </div>
+                  </section>
+                )}
+
+                {/* History Section */}
+                <section className="pt-6 border-t border-gray-100">
+                  <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                    <History size={16} className="text-purple-500" /> 回傳紀錄
+                  </h4>
+                  <div className="space-y-3">
+                    {viewingResponses.responses?.filter(r => r.responderUid === profile?.uid).length === 0 ? (
+                      <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-xs">
+                        尚無您的回傳紀錄
+                      </div>
+                    ) : (
+                      viewingResponses.responses?.filter(r => r.responderUid === profile?.uid).map(resp => (
+                        <div key={resp.id} className={`flex items-center justify-between p-4 rounded-2xl border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200 hover:border-blue-200 transition-colors'}`}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <a 
+                                href={resp.responseUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className={`text-sm font-bold flex items-center gap-1 truncate ${resp.isVoided ? 'text-gray-400' : 'text-blue-600 hover:underline'}`}
+                              >
+                                <Paperclip size={14} /> {resp.responseName}
+                              </a>
+                              {resp.isVoided && (
+                                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                              <span className="flex items-center gap-1"><History size={10} /> {new Date(resp.respondedAt).toLocaleString()}</span>
+                              {resp.isVoided && resp.voidedAt && (
+                                <span className="text-orange-500 font-medium">作廢於: {new Date(resp.voidedAt).toLocaleString()}</span>
+                              )}
+                            </div>
+                          </div>
+                          {!resp.isVoided && (
+                            <button
+                              onClick={() => setConfirmVoidResponse({ formId: viewingResponses.id!, responseId: resp.id })}
+                              className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                              title="作廢此筆回傳"
+                            >
+                              <XCircle size={18} />
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => setViewingResponses(null)}
+                  className="px-8 py-2.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all shadow-lg"
+                >
+                  關閉
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {confirmVoidId && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <XCircle size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">確定要作廢嗎？</h3>
+              <p className="text-gray-500 text-sm mb-8">作廢後此表單將從儀表板中隱藏，但仍可在管理介面中追溯。</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmVoidId(null)}
+                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleVoid(confirmVoidId)}
+                  className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all"
+                >
+                  確認作廢
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {confirmVoidResponse && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <XCircle size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">確定要作廢此筆回傳嗎？</h3>
+              <p className="text-gray-500 text-sm mb-8">作廢後該檔案將無法被下載，且會標記為已作廢。</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmVoidResponse(null)}
+                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => handleVoidResponse(confirmVoidResponse.formId, confirmVoidResponse.responseId)}
+                  className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all"
+                >
+                  確認作廢
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {viewingResponsesHistory && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <ClipboardList size={20} className="text-green-600" /> {viewingResponsesHistory.title} - 回傳紀錄
+                </h3>
+                <button onClick={() => setViewingResponsesHistory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-6">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                        <th className="p-4 whitespace-nowrap">檔案</th>
+                        <th className="p-4 whitespace-nowrap">名稱</th>
+                        <th className="p-4 whitespace-nowrap">回傳者</th>
+                        <th className="p-4 whitespace-nowrap">單位</th>
+                        <th className="p-4 whitespace-nowrap">時間</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {viewingResponsesHistory.responses?.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-gray-400 italic">尚無回傳紀錄</td>
+                        </tr>
+                      ) : (
+                        viewingResponsesHistory.responses?.map(resp => (
+                          <tr key={resp.id} className={resp.isVoided ? 'opacity-50 bg-gray-50' : 'hover:bg-gray-50/50 transition-colors'}>
+                            <td className="p-4">
+                              <a 
+                                href={resp.responseUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={`w-8 h-8 rounded-lg inline-flex items-center justify-center ${resp.isVoided ? 'bg-gray-200 text-gray-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                              >
+                                <Download size={16} />
+                              </a>
+                            </td>
+                            <td className="p-4 font-medium">
+                              <div className="flex items-center gap-2">
+                                {resp.responseName}
+                                {resp.isVoided && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">已作廢</span>}
+                              </div>
+                            </td>
+                            <td className="p-4">{resp.responderName}</td>
+                            <td className="p-4 text-gray-500">{DEPARTMENTS.find(d => d.id === resp.responderDepartmentId)?.name || resp.responderDepartmentId}</td>
+                            <td className="p-4 text-gray-400 text-xs">{new Date(resp.respondedAt).toLocaleString()}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="p-6 border-t border-gray-100 flex justify-end">
+                <button 
+                  onClick={() => setViewingResponsesHistory(null)} 
+                  className="px-8 py-2.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all shadow-lg"
+                >
+                  關閉
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -396,11 +715,11 @@ export default function App() {
 function UserManagementView({ users, showToast }: { users: UserProfile[], showToast: (msg: string, type?: 'success' | 'error') => void }) {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
 
-  const handleUpdateUser = (uid: string, updates: Partial<UserProfile>) => {
+  const handleUpdateUser = async (uid: string, updates: Partial<UserProfile>) => {
     const user = users.find(u => u.uid === uid);
     if (user) {
       try {
-        localDb.saveUser({ ...user, ...updates });
+        await localDb.saveUser({ ...user, ...updates });
         showToast('使用者資料已更新');
         setEditingUser(null);
       } catch (e: any) {
@@ -649,8 +968,9 @@ function LoginView({ onLogin }: { onLogin: (username: string) => void }) {
             ) : (
               <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => {
-                    localDb.clearAllData();
+                  onClick={async () => {
+                    await localDb.clearAllData();
+                    localStorage.clear();
                     window.location.reload();
                   }}
                   className="w-full py-3 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-sm"
@@ -725,39 +1045,8 @@ function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: string) => 
   );
 }
 
-function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void }) {
-  const [confirmVoidId, setConfirmVoidId] = useState<string | null>(null);
-  const [confirmVoidResponse, setConfirmVoidResponse] = useState<{ formId: string, responseId: string } | null>(null);
-  const [viewingResponses, setViewingResponses] = useState<Form | null>(null);
+function DashboardView({ forms, profile, showToast, setViewingResponses }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void }) {
   const subDeptIds = getSubDepartmentIds(profile.departmentId);
-
-  const handleVoid = (id: string) => {
-    try {
-      localDb.voidForm(id, { uid: profile.uid, displayName: profile.displayName });
-      showToast('表單已作廢');
-      setConfirmVoidId(null);
-      setViewingResponses(null);
-    } catch (e: any) {
-      showToast(e.message || '作廢失敗', 'error');
-    }
-  };
-
-  const handleVoidResponse = (formId: string, responseId: string) => {
-    try {
-      localDb.voidResponse(formId, responseId, { uid: profile.uid, displayName: profile.displayName });
-      showToast('回傳檔案已作廢');
-      setConfirmVoidResponse(null);
-      // Update local state for the modal
-      if (viewingResponses && viewingResponses.id === formId) {
-        const updatedResponses = viewingResponses.responses?.map(r => 
-          r.id === responseId ? { ...r, isVoided: true, voidedAt: new Date().toISOString() } : r
-        );
-        setViewingResponses({ ...viewingResponses, responses: updatedResponses });
-      }
-    } catch (e: any) {
-      showToast(e.message || '作廢失敗', 'error');
-    }
-  };
 
   // Filter for Dashboard: 
   // 1. "為審核者不能出現在儀表板上"
@@ -780,6 +1069,19 @@ function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: 
     return f.departmentId === profile.departmentId || 
            f.isPublic || 
            (f.targetDepartmentIds && f.targetDepartmentIds.includes(profile.departmentId));
+  });
+
+  // Filter for the "Recent Forms" list specifically
+  const recentApprovedForms = dashboardForms.filter(f => {
+    // Only show approved forms in the list (per user request)
+    if (f.status !== 'approved') return false;
+
+    // Time-based filtering
+    const now = new Date();
+    if (f.publishStartTime && new Date(f.publishStartTime) > now) return false;
+    if (f.publishEndTime && new Date(f.publishEndTime) < now) return false;
+
+    return true;
   });
 
   const stats = {
@@ -809,10 +1111,10 @@ function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: 
           <Building2 className="text-gray-400" />
         </div>
         <div className="divide-y divide-[#E5E5E5]">
-          {dashboardForms.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">尚無表單記錄</div>
+          {recentApprovedForms.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">尚無核准表單記錄</div>
           ) : (
-            dashboardForms.map(form => (
+            recentApprovedForms.map(form => (
               <div key={form.id} className={`p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:bg-gray-50 transition-colors ${form.isVoided ? 'opacity-60 bg-gray-50/50' : ''}`}>
                 <div className="flex items-start sm:items-center gap-4 w-full lg:flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center ${
@@ -857,19 +1159,54 @@ function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: 
                         <span className="truncate">下載附件: {form.attachmentName}</span>
                       </a>
                     )}
+
+                    {/* Approval Progress for Dashboard */}
+                    {form.status === 'pending' && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-100 text-[8px] sm:text-[10px]">
+                        <p className="font-bold text-gray-700 mb-1 flex items-center gap-1">
+                          <Shield size={10} /> 審核進度: {
+                            form.approvalStep === 'dept_manager' ? '單位主管審核中' :
+                            form.approvalStep === 'target_managers' ? '跨部門主管審核中' :
+                            form.approvalStep === 'super_admin' ? '總管理者審核中' : '已完成'
+                          }
+                        </p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                          <div className="flex items-center gap-1">
+                            {form.deptManagerApproved ? <CheckCircle size={8} className="text-green-500" /> : <div className="w-2 h-2 rounded-full border border-gray-300" />}
+                            <span className={form.deptManagerApproved ? 'text-green-700' : 'text-gray-500'}>原單位主管</span>
+                          </div>
+                          {form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                              {form.targetDepartmentIds.map(tid => {
+                                const isApproved = form.approvals?.[tid];
+                                return (
+                                  <div key={tid} className="flex items-center gap-1">
+                                    {isApproved ? <CheckCircle size={8} className="text-green-500" /> : <div className="w-2 h-2 rounded-full border border-gray-300" />}
+                                    <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{DEPARTMENTS.find(d => d.id === tid)?.name}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {(form.isPublic || form.approvalStep === 'super_admin' || form.superAdminApproved) && (
+                            <div className="flex items-center gap-1">
+                              {form.superAdminApproved ? <CheckCircle size={8} className="text-green-500" /> : <div className="w-2 h-2 rounded-full border border-gray-300" />}
+                              <span className={form.superAdminApproved ? 'text-green-700' : 'text-gray-500'}>總管理者</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-                  <ResponseUpload form={form} profile={profile} showHistory={false} showToast={showToast} onlyShowOwn={true} />
-                  {form.responses && form.responses.length > 0 && (
-                    <button 
-                      onClick={() => setViewingResponses(form)}
-                      className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
-                    >
-                      <History size={14} /> 查看回傳紀錄 ({form.responses.filter(r => r.responderUid === profile.uid && !r.isVoided).length})
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setViewingResponses(form)}
+                    className="px-6 py-2.5 bg-[#141414] text-white rounded-xl text-xs font-bold hover:bg-black transition-all flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Eye size={16} /> 檢視與回傳
+                  </button>
                 </div>
               </div>
             ))
@@ -877,155 +1214,6 @@ function DashboardView({ forms, profile, showToast }: { forms: Form[], profile: 
         </div>
       </div>
 
-      {/* Void Confirmation Modal */}
-      {confirmVoidId && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
-          >
-            <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <XCircle size={32} />
-            </div>
-            <h3 className="text-xl font-bold mb-2">確定要作廢嗎？</h3>
-            <p className="text-gray-500 text-sm mb-8">作廢後此表單將從儀表板中隱藏，但仍可在管理介面中追溯。</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmVoidId(null)}
-                className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => handleVoid(confirmVoidId)}
-                className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-700 transition-all"
-              >
-                確認作廢
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Response History Modal */}
-      <AnimatePresence>
-        {viewingResponses && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-xl font-bold truncate">回傳紀錄</h3>
-                  <p className="text-xs text-gray-500 truncate">{viewingResponses.title}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {viewingResponses.authorUid === profile.uid && !viewingResponses.isVoided && (
-                    <button
-                      onClick={() => setConfirmVoidId(viewingResponses.id!)}
-                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold hover:bg-orange-100 transition-colors flex items-center gap-1"
-                    >
-                      <XCircle size={14} /> 作廢表單
-                    </button>
-                  )}
-                  <button 
-                    onClick={() => setViewingResponses(null)}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
-                {viewingResponses.responses?.filter(r => r.responderUid === profile.uid).length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">尚無回傳紀錄</div>
-                ) : (
-                  viewingResponses.responses?.filter(r => r.responderUid === profile.uid).map(resp => (
-                    <div key={resp.id} className={`flex items-center justify-between p-4 rounded-2xl border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200'}`}>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <a 
-                            href={resp.responseUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className={`text-sm font-bold flex items-center gap-1 truncate ${resp.isVoided ? 'text-gray-400' : 'text-blue-600 hover:underline'}`}
-                          >
-                            <Paperclip size={14} /> {resp.responseName}
-                          </a>
-                          {resp.isVoided && (
-                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-full">已作廢</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-[10px] text-gray-400">
-                          <span className="flex items-center gap-1"><History size={10} /> {new Date(resp.respondedAt).toLocaleString()}</span>
-                          {resp.isVoided && resp.voidedAt && (
-                            <span className="text-orange-500">作廢於: {new Date(resp.voidedAt).toLocaleString()}</span>
-                          )}
-                        </div>
-                      </div>
-                      {!resp.isVoided && (
-                        <button
-                          onClick={() => setConfirmVoidResponse({ formId: viewingResponses.id!, responseId: resp.id })}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                          title="作廢此筆回傳"
-                        >
-                          <XCircle size={18} />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
-                <button
-                  onClick={() => setViewingResponses(null)}
-                  className="px-6 py-2 bg-[#141414] text-white rounded-xl text-sm font-bold hover:bg-black transition-all"
-                >
-                  關閉
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Void Response Confirmation Modal */}
-      <AnimatePresence>
-        {confirmVoidResponse && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
-            >
-              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <XCircle size={32} />
-              </div>
-              <h3 className="text-xl font-bold mb-2">確定要作廢此回傳嗎？</h3>
-              <p className="text-gray-500 text-sm mb-8">作廢後此檔案將無法恢復，但仍保留作廢紀錄。</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setConfirmVoidResponse(null)}
-                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => handleVoidResponse(confirmVoidResponse.formId, confirmVoidResponse.responseId)}
-                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all"
-                >
-                  確認作廢
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -1068,6 +1256,8 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
   const [file, setFile] = useState<File | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>([]);
+  const [publishStartTime, setPublishStartTime] = useState('');
+  const [publishEndTime, setPublishEndTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const toggleDepartment = (deptId: string) => {
@@ -1092,7 +1282,7 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
         attachmentName = result.name;
       }
 
-      localDb.addForm({
+      await localDb.addForm({
         title,
         content,
         authorUid: profile.uid,
@@ -1103,8 +1293,10 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
         attachmentName,
         isPublic,
         targetDepartmentIds: isPublic ? [] : targetDepartmentIds,
+        publishStartTime: publishStartTime || undefined,
+        publishEndTime: publishEndTime || undefined,
         createdAt: new Date().toISOString(),
-      }, { uid: profile.uid, displayName: profile.displayName });
+      }, profile);
       showToast('表單提交成功');
       onComplete();
     } catch (error: any) {
@@ -1133,7 +1325,7 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
               className="w-5 h-5 accent-[#141414]"
             />
             <label htmlFor="is-public" className="text-sm font-bold text-blue-900">
-              全部公開 (所有人皆可查看並下載附件)
+              全部公開
             </label>
           </div>
 
@@ -1207,6 +1399,27 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
           </div>
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">發佈開始時間 (選填)</label>
+            <input
+              type="datetime-local"
+              value={publishStartTime}
+              onChange={(e) => setPublishStartTime(e.target.value)}
+              className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">發佈結束時間 (選填)</label>
+            <input
+              type="datetime-local"
+              value={publishEndTime}
+              onChange={(e) => setPublishEndTime(e.target.value)}
+              className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+            />
+          </div>
+        </div>
+
         <div className="pt-4">
           <button
             type="submit"
@@ -1226,12 +1439,14 @@ function SubmitFormView({ profile, onComplete, showToast }: { profile: UserProfi
   );
 }
 
-function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void }) {
+function ManageFormsView({ forms, profile, showToast, setViewingResponses, setViewingResponsesHistory }: { forms: Form[], profile: UserProfile, showToast: (msg: string, type?: 'success' | 'error') => void, setViewingResponses: (f: Form | null) => void, setViewingResponsesHistory: (f: Form | null) => void }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showDeleted, setShowDeleted] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [viewingLogs, setViewingLogs] = useState<Form | null>(null);
+  const [rejectingFormId, setRejectingFormId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -1250,23 +1465,51 @@ function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile
     const matchesDeleted = showDeleted ? true : !f.isDeleted;
 
     // Reviewable scope
-    const isReviewable = profile.role === 'super_admin' || subDeptIds.includes(f.departmentId);
+    const isReviewable = profile.role === 'super_admin' || 
+                        subDeptIds.includes(f.departmentId) ||
+                        (profile.role === 'admin' && f.targetDepartmentIds?.includes(profile.departmentId));
 
     return matchesSearch && matchesStatus && matchesDeleted && isReviewable;
   });
 
   const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected') => {
     try {
-      localDb.updateForm(id, { status }, { uid: profile.uid, displayName: profile.displayName }, status);
-      showToast(`表單已${status === 'approved' ? '核准' : '駁回'}`);
+      if (status === 'approved') {
+        await localDb.approveForm(id, { 
+          uid: profile.uid, 
+          displayName: profile.displayName, 
+          role: profile.role, 
+          departmentId: profile.departmentId 
+        });
+        showToast(`表單已核准`);
+      } else {
+        setRejectingFormId(id);
+        setRejectReason('');
+      }
     } catch (e: any) {
       showToast(e.message || '更新失敗', 'error');
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleConfirmReject = async () => {
+    if (!rejectingFormId) return;
     try {
-      localDb.deleteForm(id, { uid: profile.uid, displayName: profile.displayName });
+      await localDb.rejectForm(rejectingFormId, { 
+        uid: profile.uid, 
+        displayName: profile.displayName, 
+        role: profile.role 
+      }, rejectReason || '無原因');
+      showToast(`表單已駁回`);
+      setRejectingFormId(null);
+      setRejectReason('');
+    } catch (e: any) {
+      showToast(e.message || '駁回失敗', 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await localDb.deleteForm(id, { uid: profile.uid, displayName: profile.displayName });
       showToast('表單已刪除');
       setConfirmDeleteId(null);
     } catch (e: any) {
@@ -1329,9 +1572,7 @@ function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile
               <div key={form.id} className={`p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 ${form.isDeleted ? 'bg-red-50/30 grayscale-[0.5]' : ''}`}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    {(form.status === 'pending' || form.status === 'approved') && (
-                      <StatusBadge status={form.status} />
-                    )}
+                    <StatusBadge status={form.status} />
                     {form.isDeleted && (
                       <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">已刪除</span>
                     )}
@@ -1348,6 +1589,45 @@ function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile
                     )}
                     <span className="text-xs text-gray-400">{new Date(form.createdAt).toLocaleDateString()}</span>
                   </div>
+
+                  {/* Approval Status */}
+                  {form.status === 'pending' && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200 text-[10px]">
+                      <p className="font-bold text-gray-700 mb-2 flex items-center gap-1">
+                        <Shield size={12} /> 審核進度: {
+                          form.approvalStep === 'dept_manager' ? '單位主管審核中' :
+                          form.approvalStep === 'target_managers' ? '跨部門主管審核中' :
+                          form.approvalStep === 'super_admin' ? '總管理者審核中' : '已完成'
+                        }
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <div className="flex items-center gap-1">
+                          {form.deptManagerApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                          <span className={form.deptManagerApproved ? 'text-green-700' : 'text-gray-500'}>原單位主管</span>
+                        </div>
+                        {form.targetDepartmentIds && form.targetDepartmentIds.length > 0 && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {form.targetDepartmentIds.map(tid => {
+                              const isApproved = form.approvals?.[tid];
+                              return (
+                                <div key={tid} className="flex items-center gap-1">
+                                  {isApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                                  <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{DEPARTMENTS.find(d => d.id === tid)?.name}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {(form.isPublic || form.approvalStep === 'super_admin' || form.superAdminApproved) && (
+                          <div className="flex items-center gap-1">
+                            {form.superAdminApproved ? <CheckCircle size={10} className="text-green-500" /> : <div className="w-2.5 h-2.5 rounded-full border border-gray-300" />}
+                            <span className={form.superAdminApproved ? 'text-green-700' : 'text-gray-500'}>總管理者</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <h4 className="text-xl font-bold mb-2 truncate flex items-center gap-2">
                     {form.title}
                     <button onClick={() => setViewingLogs(form)} className="p-1 hover:bg-gray-100 rounded text-gray-400" title="查看紀錄">
@@ -1365,46 +1645,53 @@ function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile
                     )}
                   </div>
 
-                  {form.responses && form.responses.length > 0 && (
-                    <div className="mt-4 p-3 bg-green-50 rounded-xl border border-green-100">
-                      <p className="text-[10px] font-bold text-green-600 uppercase mb-2">回傳資料 ({form.responses.length})</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {form.responses.map(resp => (
-                          <div key={resp.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg border ${resp.isVoided ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-green-50'}`}>
-                            <div className="flex items-center gap-2 truncate">
-                              <a href={resp.responseUrl} target="_blank" rel="noopener noreferrer" className={`text-xs hover:underline flex items-center gap-1 truncate font-bold ${resp.isVoided ? 'text-gray-400' : 'text-green-700'}`}>
-                                <Download size={12} /> {resp.responseName}
-                              </a>
-                              {resp.isVoided && (
-                                <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[8px] font-bold rounded-full">已作廢</span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-gray-400 shrink-0">{resp.responderName}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
                   {/* Response Section for Reviewers removed as per request */}
                 </div>
 
                 <div className="flex flex-row lg:flex-col gap-2 shrink-0">
                   {form.status === 'pending' && !form.isDeleted && (
                     <>
-                      <button
-                        onClick={() => handleUpdateStatus(form.id!, 'approved')}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle size={16} /> 核准
-                      </button>
-                      <button
-                        onClick={() => handleUpdateStatus(form.id!, 'rejected')}
-                        className="flex-1 px-4 py-2 border-2 border-red-100 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
-                      >
-                        <XCircle size={16} /> 駁回
-                      </button>
+                      {((profile.role === 'super_admin' && !form.superAdminApproved) || 
+                        (profile.role === 'admin' && (
+                          (form.approvalStep === 'dept_manager' && form.departmentId === profile.departmentId && !form.deptManagerApproved) ||
+                          (form.approvalStep === 'target_managers' && form.targetDepartmentIds?.includes(profile.departmentId) && !form.approvals?.[profile.departmentId])
+                        ))) && (
+                        <button
+                          onClick={() => handleUpdateStatus(form.id!, 'approved')}
+                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <CheckCircle size={16} /> 核准
+                        </button>
+                      )}
+                      {((profile.role === 'super_admin' && !form.superAdminApproved) || 
+                        (profile.role === 'admin' && (
+                          (form.approvalStep === 'dept_manager' && form.departmentId === profile.departmentId && !form.deptManagerApproved) ||
+                          (form.approvalStep === 'target_managers' && form.targetDepartmentIds?.includes(profile.departmentId) && !form.approvals?.[profile.departmentId])
+                        ))) && (
+                        <button
+                          onClick={() => handleUpdateStatus(form.id!, 'rejected')}
+                          className="flex-1 px-4 py-2 border-2 border-red-100 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <XCircle size={16} /> 駁回
+                        </button>
+                      )}
                     </>
+                  )}
+                  {!form.isDeleted && (
+                    <button
+                      onClick={() => setViewingResponsesHistory(form)}
+                      className="flex-1 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <ClipboardList size={16} /> 回傳紀錄
+                    </button>
+                  )}
+                  {!form.isDeleted && (
+                    <button
+                      onClick={() => setViewingLogs(form)}
+                      className="flex-1 px-4 py-2 bg-gray-50 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <History size={16} /> 審核歷程
+                    </button>
                   )}
                   {!form.isDeleted && (
                     <button
@@ -1428,6 +1715,39 @@ function ManageFormsView({ forms, profile, showToast }: { forms: Form[], profile
           )}
         </div>
       </div>
+
+      {/* Reject Reason Modal */}
+      {rejectingFormId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8"
+          >
+            <h3 className="text-xl font-bold mb-4">駁回表單</h3>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="請輸入駁回原因..."
+              className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all resize-none mb-6 h-32 text-sm"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRejectingFormId(null)}
+                className="flex-1 py-3 border border-gray-200 rounded-xl font-bold hover:bg-gray-50 transition-all text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmReject}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all text-sm"
+              >
+                確認駁回
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingForm && (
@@ -1486,6 +1806,8 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
   const [content, setContent] = useState(form.content);
   const [isPublic, setIsPublic] = useState(form.isPublic || false);
   const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>(form.targetDepartmentIds || []);
+  const [publishStartTime, setPublishStartTime] = useState(form.publishStartTime || '');
+  const [publishEndTime, setPublishEndTime] = useState(form.publishEndTime || '');
   const [submitting, setSubmitting] = useState(false);
 
   const toggleDepartment = (deptId: string) => {
@@ -1500,12 +1822,14 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
     e.preventDefault();
     setSubmitting(true);
     try {
-      localDb.updateForm(form.id!, { 
+      await localDb.updateForm(form.id!, { 
         title, 
         content, 
         isPublic, 
-        targetDepartmentIds: isPublic ? [] : targetDepartmentIds 
-      }, { uid: profile.uid, displayName: profile.displayName });
+        targetDepartmentIds: isPublic ? [] : targetDepartmentIds,
+        publishStartTime: publishStartTime || undefined,
+        publishEndTime: publishEndTime || undefined
+      }, profile);
       showToast('表單已更新');
       onClose();
     } catch (error: any) {
@@ -1585,6 +1909,27 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
                 </div>
               </div>
             )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 mb-1">發佈開始時間</label>
+                <input
+                  type="datetime-local"
+                  value={publishStartTime}
+                  onChange={(e) => setPublishStartTime(e.target.value)}
+                  className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none transition-all text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 mb-1">發佈結束時間</label>
+                <input
+                  type="datetime-local"
+                  value={publishEndTime}
+                  onChange={(e) => setPublishEndTime(e.target.value)}
+                  className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none transition-all text-xs"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -1679,17 +2024,12 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
     try {
       const result = await localDb.uploadFile(file);
       
-      localDb.addResponse(form.id!, {
+      await localDb.addResponse(form.id!, {
         responseUrl: result.url,
         responseName: result.name,
         responderUid: profile.uid,
         responderName: profile.displayName,
-      }, { uid: profile.uid, displayName: profile.displayName });
-      
-      // Also update form status to completed if it was approved
-      if (form.status === 'approved') {
-        localDb.updateForm(form.id!, { status: 'completed' }, { uid: profile.uid, displayName: profile.displayName }, 'respond');
-      }
+      }, { uid: profile.uid, displayName: profile.displayName, departmentId: profile.departmentId });
       
       showToast('附件上傳成功');
       setFile(null);

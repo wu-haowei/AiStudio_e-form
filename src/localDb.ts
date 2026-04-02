@@ -1,47 +1,71 @@
+import { openDB, IDBPDatabase } from 'idb';
 import { UserProfile, Form } from './types';
 
-const USERS_KEY = 'app_users';
-const FORMS_KEY = 'app_forms';
+const DB_NAME = 'app_database';
+const DB_VERSION = 1;
+const USERS_STORE = 'users';
+const FORMS_STORE = 'forms';
+const SESSION_STORE = 'session';
+
+let dbPromise: Promise<IDBPDatabase> | null = null;
+
+const getDb = () => {
+  if (!dbPromise) {
+    dbPromise = openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(USERS_STORE)) {
+          db.createObjectStore(USERS_STORE, { keyPath: 'uid' });
+        }
+        if (!db.objectStoreNames.contains(FORMS_STORE)) {
+          db.createObjectStore(FORMS_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(SESSION_STORE)) {
+          db.createObjectStore(SESSION_STORE);
+        }
+      },
+    });
+  }
+  return dbPromise;
+};
+
+const notifyUpdate = () => {
+  window.dispatchEvent(new Event('local-db-update'));
+};
 
 export const localDb = {
-  saveToStorage: (key: string, data: any) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(data));
-      window.dispatchEvent(new Event('local-db-update'));
-    } catch (e) {
-      if (e instanceof DOMException && (e.code === 22 || e.code === 1014 || e.name === 'QuotaExceededError')) {
-        throw new Error('瀏覽器儲存空間已滿 (localStorage 額度已達上限)。\n由於本系統目前使用瀏覽器本地儲存，包含附件在內的總容量限制約為 5MB。\n請嘗試刪除舊表單或清除瀏覽器快取。');
-      } else {
-        console.error('Storage error:', e);
-        throw e;
-      }
-    }
+  // Session
+  getMockUser: async () => {
+    const db = await getDb();
+    return db.get(SESSION_STORE, 'mock_user');
+  },
+  setMockUser: async (user: any) => {
+    const db = await getDb();
+    await db.put(SESSION_STORE, user, 'mock_user');
+  },
+  clearMockUser: async () => {
+    const db = await getDb();
+    await db.delete(SESSION_STORE, 'mock_user');
   },
 
   // Users
-  getUsers: (): UserProfile[] => {
-    const data = localStorage.getItem(USERS_KEY);
-    return data ? JSON.parse(data) : [];
+  getUsers: async (): Promise<UserProfile[]> => {
+    const db = await getDb();
+    return db.getAll(USERS_STORE);
   },
-  getUser: (uid: string): UserProfile | null => {
-    const users = localDb.getUsers();
-    return users.find(u => u.uid === uid) || null;
+  getUser: async (uid: string): Promise<UserProfile | null> => {
+    const db = await getDb();
+    return (await db.get(USERS_STORE, uid)) || null;
   },
-  saveUser: (user: UserProfile) => {
-    const users = localDb.getUsers();
-    const index = users.findIndex(u => u.uid === user.uid);
-    if (index > -1) {
-      users[index] = user;
-    } else {
-      users.push(user);
-    }
-    localDb.saveToStorage(USERS_KEY, users);
+  saveUser: async (user: UserProfile) => {
+    const db = await getDb();
+    await db.put(USERS_STORE, user);
+    notifyUpdate();
   },
 
   // Forms
-  getForms: (): Form[] => {
-    const data = localStorage.getItem(FORMS_KEY);
-    return data ? JSON.parse(data) : [];
+  getForms: async (): Promise<Form[]> => {
+    const db = await getDb();
+    return db.getAll(FORMS_STORE);
   },
   logAction: (form: Form, action: any, user: { uid: string, displayName: string }, details?: string) => {
     if (!form.logs) form.logs = [];
@@ -54,94 +78,203 @@ export const localDb = {
       details
     });
   },
-  addForm: (form: Omit<Form, 'id'>, user: { uid: string, displayName: string }): string => {
-    const forms = localDb.getForms();
+  // Helper to calculate initial approval state
+  calculateApprovalState: (form: Partial<Form>, user: { role: any, departmentId: string }) => {
+    let status: Form['status'] = 'pending';
+    let approvalStep: Form['approvalStep'] = 'dept_manager';
+    const approvals: { [deptId: string]: boolean } = {};
+
+    if (user.role === 'super_admin') {
+      status = 'approved';
+      approvalStep = 'completed';
+    } else if (user.role === 'admin') {
+      if (form.isPublic) {
+        approvalStep = 'super_admin';
+      } else if (form.targetDepartmentIds && form.targetDepartmentIds.length > 0) {
+        approvalStep = 'target_managers';
+        form.targetDepartmentIds.forEach(tid => approvals[tid] = false);
+      } else {
+        status = 'approved';
+        approvalStep = 'completed';
+      }
+    } else {
+      approvalStep = 'dept_manager';
+      if (form.targetDepartmentIds) {
+        form.targetDepartmentIds.forEach(tid => approvals[tid] = false);
+      }
+    }
+
+    return {
+      status,
+      approvalStep,
+      approvals,
+      deptManagerApproved: user.role === 'admin' || user.role === 'super_admin',
+      superAdminApproved: user.role === 'super_admin'
+    };
+  },
+
+  addForm: async (form: Omit<Form, 'id'>, user: { uid: string, displayName: string, role: any, departmentId: string }): Promise<string> => {
+    const db = await getDb();
     const id = Math.random().toString(36).substr(2, 9);
-    const newForm = { ...form, id, logs: [] } as Form;
+    
+    const approvalState = localDb.calculateApprovalState(form, user);
+
+    const newForm = { 
+      ...form, 
+      id, 
+      logs: [], 
+      ...approvalState
+    } as Form;
+
     localDb.logAction(newForm, 'create', user);
-    forms.push(newForm);
-    localDb.saveToStorage(FORMS_KEY, forms);
+    await db.put(FORMS_STORE, newForm);
+    notifyUpdate();
     return id;
   },
-  updateForm: (id: string, updates: Partial<Form>, user: { uid: string, displayName: string }, action: any = 'edit') => {
-    const forms = localDb.getForms();
-    const index = forms.findIndex(f => f.id === id);
-    if (index > -1) {
-      const form = forms[index];
+  approveForm: async (id: string, user: { uid: string, displayName: string, role: any, departmentId: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, id);
+    if (!form || (form.status !== 'pending' && form.status !== 'approved')) return;
+
+    if (user.role === 'super_admin') {
+      form.status = 'approved';
+      form.approvalStep = 'completed';
+      form.superAdminApproved = true;
+      localDb.logAction(form, 'approve', user, '總管理者核准 (一鍵通過)');
+    } else if (user.role === 'admin') {
+      if (form.approvalStep === 'dept_manager' && user.departmentId === form.departmentId) {
+        form.deptManagerApproved = true;
+        if (form.isPublic) {
+          form.approvalStep = 'super_admin';
+        } else if (form.targetDepartmentIds && form.targetDepartmentIds.length > 0) {
+          form.approvalStep = 'target_managers';
+        } else {
+          form.status = 'approved';
+          form.approvalStep = 'completed';
+        }
+        localDb.logAction(form, 'approve', user, '單位主管核准');
+      } else if (form.approvalStep === 'target_managers' && form.targetDepartmentIds?.includes(user.departmentId)) {
+        if (!form.approvals) form.approvals = {};
+        form.approvals[user.departmentId] = true;
+        
+        // Check if all target managers approved
+        const allApproved = form.targetDepartmentIds.every(tid => form.approvals?.[tid]);
+        if (allApproved) {
+          form.status = 'approved';
+          form.approvalStep = 'completed';
+        }
+        localDb.logAction(form, 'approve', user, `目標單位主管核准`);
+      } else if (form.approvalStep === 'super_admin' && user.role === 'super_admin') {
+        // This is handled by the first if, but just in case
+        form.status = 'approved';
+        form.approvalStep = 'completed';
+        form.superAdminApproved = true;
+        localDb.logAction(form, 'approve', user, '總管理者核准');
+      }
+    }
+
+    await db.put(FORMS_STORE, form);
+    notifyUpdate();
+  },
+  rejectForm: async (id: string, user: { uid: string, displayName: string, role: any }, reason: string) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, id);
+    if (!form || form.status !== 'pending') return;
+
+    form.status = 'rejected';
+    form.approvalStep = 'completed';
+    localDb.logAction(form, 'reject', user, `駁回原因: ${reason}`);
+    
+    await db.put(FORMS_STORE, form);
+    notifyUpdate();
+  },
+  updateForm: async (id: string, updates: Partial<Form>, user: { uid: string, displayName: string, role: any, departmentId: string }, action: any = 'edit') => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, id);
+    if (form) {
       localDb.logAction(form, action, user);
-      forms[index] = { ...form, ...updates };
-      localDb.saveToStorage(FORMS_KEY, forms);
+      
+      let finalUpdates = { ...updates };
+      
+      // If editing, reset approval workflow
+      if (action === 'edit') {
+        const newApprovalState = localDb.calculateApprovalState({ ...form, ...updates }, user);
+        finalUpdates = { ...finalUpdates, ...newApprovalState };
+      }
+      
+      const updatedForm = { ...form, ...finalUpdates };
+      await db.put(FORMS_STORE, updatedForm);
+      notifyUpdate();
     }
   },
-  deleteForm: (id: string, user: { uid: string, displayName: string }) => {
-    const forms = localDb.getForms();
-    const index = forms.findIndex(f => f.id === id);
-    if (index > -1) {
-      const form = { ...forms[index] };
+  deleteForm: async (id: string, user: { uid: string, displayName: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, id);
+    if (form) {
       form.isDeleted = true;
       form.deletedAt = new Date().toISOString();
       localDb.logAction(form, 'delete', user);
-      forms[index] = form;
-      localDb.saveToStorage(FORMS_KEY, forms);
+      await db.put(FORMS_STORE, form);
+      notifyUpdate();
     }
   },
-  voidForm: (id: string, user: { uid: string, displayName: string }) => {
-    const forms = localDb.getForms();
-    const index = forms.findIndex(f => f.id === id);
-    if (index > -1) {
-      const form = { ...forms[index] };
+  voidForm: async (id: string, user: { uid: string, displayName: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, id);
+    if (form) {
       form.isVoided = true;
       form.voidedAt = new Date().toISOString();
       localDb.logAction(form, 'void', user);
-      forms[index] = form;
-      localDb.saveToStorage(FORMS_KEY, forms);
+      await db.put(FORMS_STORE, form);
+      notifyUpdate();
     }
   },
-  voidResponse: (formId: string, responseId: string, user: { uid: string, displayName: string }) => {
-    const forms = localDb.getForms();
-    const index = forms.findIndex(f => f.id === formId);
-    if (index > -1) {
-      const form = forms[index];
-      if (form.responses) {
-        const rIndex = form.responses.findIndex(r => r.id === responseId);
-        if (rIndex > -1) {
-          form.responses[rIndex].isVoided = true;
-          form.responses[rIndex].voidedAt = new Date().toISOString();
-          localDb.logAction(form, 'void_response', user, `作廢回傳檔案: ${form.responses[rIndex].responseName}`);
-          localDb.saveToStorage(FORMS_KEY, forms);
-        }
+  voidResponse: async (formId: string, responseId: string, user: { uid: string, displayName: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, formId);
+    if (form && form.responses) {
+      const rIndex = form.responses.findIndex((r: any) => r.id === responseId);
+      if (rIndex > -1) {
+        form.responses[rIndex].isVoided = true;
+        form.responses[rIndex].voidedAt = new Date().toISOString();
+        localDb.logAction(form, 'void_response', user, `作廢回傳檔案: ${form.responses[rIndex].responseName}`);
+        await db.put(FORMS_STORE, form);
+        notifyUpdate();
       }
     }
   },
-  addResponse: (formId: string, response: any, user: { uid: string, displayName: string }) => {
-    const forms = localDb.getForms();
-    const index = forms.findIndex(f => f.id === formId);
-    if (index > -1) {
-      const form = forms[index];
+  addResponse: async (formId: string, response: any, user: { uid: string, displayName: string, departmentId: string }) => {
+    const db = await getDb();
+    const form = await db.get(FORMS_STORE, formId);
+    if (form) {
       if (!form.responses) form.responses = [];
       form.responses.push({
         id: Math.random().toString(36).substr(2, 9),
         ...response,
+        responderDepartmentId: user.departmentId,
         respondedAt: new Date().toISOString()
       });
       localDb.logAction(form, 'respond', user);
-      localDb.saveToStorage(FORMS_KEY, forms);
+      await db.put(FORMS_STORE, form);
+      notifyUpdate();
     }
   },
 
-  clearAllData: () => {
-    localStorage.removeItem(USERS_KEY);
-    localStorage.removeItem(FORMS_KEY);
-    localStorage.removeItem('mock_user');
-    window.dispatchEvent(new Event('local-db-update'));
+  clearAllData: async () => {
+    const db = await getDb();
+    await db.clear(USERS_STORE);
+    await db.clear(FORMS_STORE);
+    await db.clear(SESSION_STORE);
+    notifyUpdate();
   },
 
   // File "Upload" (Base64)
   uploadFile: async (file: File): Promise<{ url: string, name: string }> => {
-    // Limit file size to 1MB to prevent filling up localStorage too quickly
-    const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+    // IndexedDB has much higher limits than localStorage (usually 50% of disk space)
+    // So we can increase the limit or remove it. Let's keep a reasonable limit for performance.
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     if (file.size > MAX_FILE_SIZE) {
-      throw new Error('檔案太大 (限制為 1MB)。由於目前使用瀏覽器本地儲存，請上傳較小的檔案。');
+      throw new Error('檔案太大 (限制為 10MB)。');
     }
 
     return new Promise((resolve, reject) => {
