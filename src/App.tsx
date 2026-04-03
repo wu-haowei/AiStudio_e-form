@@ -1182,9 +1182,18 @@ function LoginView({ onLogin }: { onLogin: (username: string) => void }) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="請輸入帳號"
-                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+                className="w-full pl-12 pr-10 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
                 required
               />
+              {username && (
+                <button
+                  type="button"
+                  onClick={() => setUsername('')}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
+                >
+                  <X size={18} />
+                </button>
+              )}
             </div>
           </div>
           
@@ -1197,9 +1206,18 @@ function LoginView({ onLogin }: { onLogin: (username: string) => void }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="請輸入密碼"
-                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
+                className="w-full pl-12 pr-10 py-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
                 required
               />
+              {password && (
+                <button
+                  type="button"
+                  onClick={() => setPassword('')}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
+                >
+                  <X size={18} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1963,14 +1981,23 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 relative">
                 <input
                   type="text"
                   value={field.label}
                   onChange={(e) => updateField(field.id, { label: e.target.value })}
                   placeholder="請輸入題目名稱 (例如: 您的聯絡電話)"
-                  className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
+                  className="w-full p-3 pr-10 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
                 />
+                {field.label && (
+                  <button
+                    type="button"
+                    onClick={() => updateField(field.id, { label: '' })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
               <div>
                 <select
@@ -2806,8 +2833,16 @@ function ManageFormsView({
             placeholder={viewMode === 'forms' ? "搜尋標題或提交者..." : "搜尋表單標題或回傳者..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm"
+            className="w-full pl-12 pr-10 py-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-500 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         {viewMode === 'forms' && (
           <div className="flex items-center gap-2 w-full md:w-auto">
@@ -3323,7 +3358,18 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-bold text-gray-700 mb-1">發佈開始時間</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-bold text-gray-700">發佈開始時間</label>
+                  {publishStartTime && (
+                    <button 
+                      type="button"
+                      onClick={() => setPublishStartTime('')}
+                      className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5"
+                    >
+                      <X size={10} /> 清除
+                    </button>
+                  )}
+                </div>
                 <input
                   type="datetime-local"
                   value={publishStartTime}
@@ -3332,7 +3378,18 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-gray-700 mb-1">發佈結束時間</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-bold text-gray-700">發佈結束時間</label>
+                  {publishEndTime && (
+                    <button 
+                      type="button"
+                      onClick={() => setPublishEndTime('')}
+                      className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5"
+                    >
+                      <X size={10} /> 清除
+                    </button>
+                  )}
+                </div>
                 <input
                   type="datetime-local"
                   value={publishEndTime}
@@ -3352,7 +3409,18 @@ function EditFormModal({ form, profile, onClose, showToast }: { form: Form, prof
                 <div className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
                   {fields.map(field => (
                     <div key={field.id} className="space-y-1">
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase">{field.label}</label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase">{field.label}</label>
+                        {initialAnswers[field.id] !== undefined && initialAnswers[field.id] !== '' && (!Array.isArray(initialAnswers[field.id]) || initialAnswers[field.id].length > 0) && (
+                          <button 
+                            type="button"
+                            onClick={() => setInitialAnswers({ ...initialAnswers, [field.id]: field.type === 'checkbox' ? [] : undefined })}
+                            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
+                          >
+                            <X size={10} /> 清除
+                          </button>
+                        )}
+                      </div>
                       {field.type === 'text' && (
                         <input
                           type="text"
@@ -3646,9 +3714,21 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
 
               return (
                 <div key={field.id} className="space-y-2">
-                  <label className="block text-xs font-bold text-gray-700">
-                    {field.label} {required && <span className="text-red-500">*</span>}
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-700">
+                      {field.label} {required && <span className="text-red-500">*</span>}
+                    </label>
+                    {answers[field.id] !== undefined && answers[field.id] !== '' && (!Array.isArray(answers[field.id]) || answers[field.id].length > 0) && (
+                      <button 
+                        type="button"
+                        onClick={() => setAnswers({ ...answers, [field.id]: field.type === 'checkbox' ? [] : undefined })}
+                        className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
+                        title="清除此欄位"
+                      >
+                        <X size={10} /> 清除
+                      </button>
+                    )}
+                  </div>
                   
                   {field.type === 'text' && (
                     <input
