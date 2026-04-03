@@ -1,5 +1,5 @@
 import { openDB, IDBPDatabase } from 'idb';
-import { UserProfile, Form } from './types';
+import { UserProfile, Form } from '../types';
 
 const DB_NAME = 'app_database';
 const DB_VERSION = 1;
