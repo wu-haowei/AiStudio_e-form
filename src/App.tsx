@@ -1538,6 +1538,7 @@ function SystemGuideView() {
                         <li>• <strong>目標單位：</strong>可指定特定單位填寫，或設定為「公開」供全體人員填寫。</li>
                         <li>• <strong>審核流設定：</strong>可選擇「僅單位主管」或「需總管理者」等多種審核路徑。</li>
                         <li>• <strong>邏輯跳題：</strong>支援根據前題答案（如：是否上傳檔案）動態顯示/隱藏後續題目或變更必填屬性。</li>
+                        <li>• <strong>欄位驗證：</strong>支援跨欄位比較（如：結束時間 B 必須大於等於開始時間 A），並可自定義錯誤提示訊息。</li>
                       </ul>
                     </div>
 
@@ -2085,22 +2086,57 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                     >
                       <option value="==">等於</option>
                       <option value="!=">不等於</option>
+                      <option value=">">大於</option>
+                      <option value="<">小於</option>
+                      <option value=">=">大於等於</option>
+                      <option value="<=">小於等於</option>
                       <option value="contains">包含</option>
                       <option value="exists">已上傳檔案</option>
                       <option value="not_exists">未上傳檔案</option>
                     </select>
                     {(!rule.conditionOperator || (rule.conditionOperator !== 'exists' && rule.conditionOperator !== 'not_exists')) && (
-                      <input
-                        type="text"
-                        value={rule.conditionValue}
-                        onChange={(e) => {
-                          const newRules = [...(field.rules || [])];
-                          newRules[ruleIdx].conditionValue = e.target.value;
-                          updateField(field.id, { rules: newRules });
-                        }}
-                        placeholder="條件值"
-                        className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
-                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={rule.compareWithField}
+                          onChange={(e) => {
+                            const newRules = [...(field.rules || [])];
+                            newRules[ruleIdx].compareWithField = e.target.checked;
+                            newRules[ruleIdx].conditionValue = '';
+                            updateField(field.id, { rules: newRules });
+                          }}
+                          className="w-3 h-3"
+                          title="與另一個欄位比較"
+                        />
+                        {rule.compareWithField ? (
+                          <select
+                            value={rule.conditionValue}
+                            onChange={(e) => {
+                              const newRules = [...(field.rules || [])];
+                              newRules[ruleIdx].conditionValue = e.target.value;
+                              updateField(field.id, { rules: newRules });
+                            }}
+                            className="p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                          >
+                            <option value="">選擇比較欄位</option>
+                            {fields.filter(f => f.id !== field.id).map(f => (
+                              <option key={f.id} value={f.id}>{f.label || `題目 ${fields.indexOf(f) + 1}`}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={rule.conditionValue}
+                            onChange={(e) => {
+                              const newRules = [...(field.rules || [])];
+                              newRules[ruleIdx].conditionValue = e.target.value;
+                              updateField(field.id, { rules: newRules });
+                            }}
+                            placeholder="條件值"
+                            className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                          />
+                        )}
+                      </div>
                     )}
                     <span className="text-[10px] text-gray-400">則</span>
                     <select
@@ -2108,6 +2144,9 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                       onChange={(e) => {
                         const newRules = [...(field.rules || [])];
                         newRules[ruleIdx].effect = e.target.value as any;
+                        if (e.target.value === 'error' && !newRules[ruleIdx].errorMessage) {
+                          newRules[ruleIdx].errorMessage = '欄位驗證失敗';
+                        }
                         updateField(field.id, { rules: newRules });
                       }}
                       className="p-1.5 rounded border border-gray-200 text-[10px] outline-none"
@@ -2116,7 +2155,21 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                       <option value="hide">隱藏</option>
                       <option value="require">必填</option>
                       <option value="optional">選填</option>
+                      <option value="error">顯示錯誤</option>
                     </select>
+                    {rule.effect === 'error' && (
+                      <input
+                        type="text"
+                        value={rule.errorMessage || ''}
+                        onChange={(e) => {
+                          const newRules = [...(field.rules || [])];
+                          newRules[ruleIdx].errorMessage = e.target.value;
+                          updateField(field.id, { rules: newRules });
+                        }}
+                        placeholder="錯誤訊息"
+                        className="w-32 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -3461,39 +3514,27 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
 
   const handleUpload = async () => {
     // Validation
-    const missingRequired = form.fields?.filter(f => {
-      // Check rules for visibility and requirement
-      let visible = true;
-      let required = f.required;
-
-      f.rules?.forEach(rule => {
-        const condVal = answers[rule.conditionFieldId];
-        const met = String(condVal) === String(rule.conditionValue);
-        if (met) {
-          if (rule.effect === 'show') visible = true;
-          if (rule.effect === 'hide') visible = false;
-          if (rule.effect === 'require') required = true;
-          if (rule.effect === 'optional') required = false;
-        } else {
-          if (rule.effect === 'show') visible = false;
-        }
-      });
-
-      if (!visible) return false;
-      return required && !answers[f.id];
+    const errors: string[] = [];
+    
+    form.fields?.forEach(field => {
+      const { visible, required, error } = getFieldState(field);
+      if (!visible) return;
+      
+      if (required && !answers[field.id]) {
+        errors.push(`${field.label} 為必填欄位`);
+      }
+      
+      if (error) {
+        errors.push(`${field.label}: ${error}`);
+      }
+      
+      if (field.type === 'checkbox' && field.maxSelections && Array.isArray(answers[field.id]) && answers[field.id].length > field.maxSelections) {
+        errors.push(`${field.label} 複選題項數超過限制 (${field.maxSelections})`);
+      }
     });
 
-    if (missingRequired && missingRequired.length > 0) {
-      showToast(`請填寫必填欄位: ${missingRequired.map(f => f.label).join(', ')}`, 'error');
-      return;
-    }
-
-    // Check max selections
-    const invalidMax = form.fields?.filter(f => 
-      f.type === 'checkbox' && f.maxSelections && Array.isArray(answers[f.id]) && answers[f.id].length > f.maxSelections
-    );
-    if (invalidMax && invalidMax.length > 0) {
-      showToast(`複選題項數超過限制: ${invalidMax.map(f => f.label).join(', ')}`, 'error');
+    if (errors.length > 0) {
+      showToast(errors[0], 'error');
       return;
     }
 
@@ -3531,32 +3572,60 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
   const getFieldState = (field: FormField) => {
     let visible = true;
     let required = field.required;
+    let error = '';
 
-    if (!field.rules || field.rules.length === 0) return { visible, required };
+    if (!field.rules || field.rules.length === 0) return { visible, required, error };
 
     field.rules.forEach(rule => {
       const condVal = answers[rule.conditionFieldId];
+      const targetVal = rule.compareWithField ? answers[rule.conditionValue] : rule.conditionValue;
       let met = false;
       
       const op = rule.conditionOperator || '==';
-      if (op === '==') met = String(condVal) === String(rule.conditionValue);
-      else if (op === '!=') met = String(condVal) !== String(rule.conditionValue);
-      else if (op === 'contains') met = String(condVal).includes(String(rule.conditionValue));
-      else if (op === 'exists') met = !!condVal;
-      else if (op === 'not_exists') met = !condVal;
+      
+      const compare = (a: any, b: any, operator: string) => {
+        if (operator === 'exists') return !!a;
+        if (operator === 'not_exists') return !a;
+        if (a === undefined || a === null || b === undefined || b === null) return false;
+        
+        // Try to compare as numbers if possible
+        const na = Number(a);
+        const nb = Number(b);
+        if (!isNaN(na) && !isNaN(nb) && String(a).trim() !== '' && String(b).trim() !== '') {
+          if (operator === '>') return na > nb;
+          if (operator === '<') return na < nb;
+          if (operator === '>=') return na >= nb;
+          if (operator === '<=') return na <= nb;
+        }
+        
+        // Otherwise compare as strings (works for ISO dates/times)
+        const sa = String(a);
+        const sb = String(b);
+        if (operator === '>') return sa > sb;
+        if (operator === '<') return sa < sb;
+        if (operator === '>=') return sa >= sb;
+        if (operator === '<=') return sa <= sb;
+        if (operator === '==') return sa === sb;
+        if (operator === '!=') return sa !== sb;
+        if (operator === 'contains') return sa.includes(sb);
+        return false;
+      };
+
+      met = compare(condVal, targetVal, op);
 
       if (met) {
         if (rule.effect === 'show') visible = true;
         if (rule.effect === 'hide') visible = false;
         if (rule.effect === 'require') required = true;
         if (rule.effect === 'optional') required = false;
+        if (rule.effect === 'error') error = rule.errorMessage || '驗證失敗';
       } else {
         // If it's a 'show' rule and not met, default to hidden unless another rule shows it
         if (rule.effect === 'show') visible = false;
       }
     });
 
-    return { visible, required };
+    return { visible, required, error };
   };
 
   const displayResponses = onlyShowOwn 
@@ -3572,7 +3641,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
           </h5>
           <div className="space-y-4">
             {form.fields.map(field => {
-              const { visible, required } = getFieldState(field);
+              const { visible, required, error } = getFieldState(field);
               if (!visible) return null;
 
               return (
@@ -3586,7 +3655,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                       type="text"
                       value={answers[field.id] || ''}
                       onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
+                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
                       placeholder="請輸入內容..."
                     />
                   )}
@@ -3595,7 +3664,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                     <textarea
                       value={answers[field.id] || ''}
                       onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm resize-none"
+                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm resize-none`}
                       rows={4}
                       placeholder="請輸入內容..."
                     />
@@ -3606,7 +3675,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                       type="number"
                       value={answers[field.id] || ''}
                       onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
+                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
                       placeholder="請輸入數字..."
                     />
                   )}
@@ -3616,7 +3685,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                       type="date"
                       value={answers[field.id] || ''}
                       onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
+                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
                     />
                   )}
 
@@ -3624,7 +3693,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                     <select
                       value={answers[field.id] || ''}
                       onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm bg-white"
+                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm bg-white`}
                     >
                       <option value="">請選擇...</option>
                       {field.options?.map(opt => (
@@ -3634,7 +3703,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                   )}
 
                   {field.type === 'radio' && (
-                    <div className="flex flex-wrap gap-3">
+                    <div className={`flex flex-wrap gap-3 p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-transparent'}`}>
                       {field.options?.map(opt => (
                         <label key={opt} className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -3652,7 +3721,7 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                   )}
 
                   {field.type === 'checkbox' && (
-                    <div className="space-y-2">
+                    <div className={`space-y-2 p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-transparent'}`}>
                       <div className="flex flex-wrap gap-3">
                         {field.options?.map(opt => (
                           <label key={opt} className="flex items-center gap-2 cursor-pointer">
@@ -3680,21 +3749,29 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
                   )}
 
                   {field.type === 'file' && (
-                    <div className="space-y-2">
+                    <div className={`p-4 border-2 border-dashed ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} rounded-xl`}>
                       <input
                         type="file"
+                        id={`file-${field.id}`}
+                        className="hidden"
                         onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          setAnswers({ ...answers, [field.id]: file });
+                          const file = e.target.files?.[0];
+                          if (file) setAnswers({ ...answers, [field.id]: file });
                         }}
-                        className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none text-sm"
                       />
-                      {answers[field.id] instanceof File && (
-                        <p className="text-[10px] text-blue-600 font-bold flex items-center gap-1">
-                          <Paperclip size={10} /> 已選擇: {answers[field.id].name}
-                        </p>
-                      )}
+                      <label htmlFor={`file-${field.id}`} className="flex flex-col items-center gap-2 cursor-pointer">
+                        <FileUp className={error ? 'text-red-400' : 'text-gray-400'} size={24} />
+                        <span className="text-xs text-gray-500">
+                          {answers[field.id] ? (answers[field.id] as File).name : '點擊或拖曳上傳附件'}
+                        </span>
+                      </label>
                     </div>
+                  )}
+
+                  {error && (
+                    <p className="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                      <AlertCircle size={12} /> {error}
+                    </p>
                   )}
                 </div>
               );

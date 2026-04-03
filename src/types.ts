@@ -21,9 +21,11 @@ export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'tex
 export interface FormFieldRule {
   id: string;
   conditionFieldId: string;
-  conditionOperator?: '==' | '!=' | 'contains' | 'exists' | 'not_exists';
+  conditionOperator?: '==' | '!=' | 'contains' | 'exists' | 'not_exists' | '>' | '<' | '>=' | '<=';
+  compareWithField?: boolean;
   conditionValue: any;
-  effect: 'hide' | 'show' | 'require' | 'optional';
+  effect: 'hide' | 'show' | 'require' | 'optional' | 'error';
+  errorMessage?: string;
 }
 
 export interface FormField {

@@ -170,17 +170,34 @@ export const localDb = {
           const nextStep = form.workflow![nextIndex];
           if (nextStep.condition) {
             const val = dataToCheck[nextStep.condition.fieldId] || '';
-            let met = false;
             const condVal = nextStep.condition.value;
-            if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
-            if (nextStep.condition.operator === '!=') met = String(val) !== String(condVal);
-            if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
-            if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
-            if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
-            if (nextStep.condition.operator === 'exists') met = !!val;
-            if (nextStep.condition.operator === 'not_exists') met = !val;
+            const op = nextStep.condition.operator;
             
-            if (!met) {
+            const compare = (a: any, b: any, operator: string) => {
+              if (operator === 'exists') return !!a;
+              if (operator === 'not_exists') return !a;
+              if (a === undefined || a === null || b === undefined || b === null) return false;
+              const na = Number(a);
+              const nb = Number(b);
+              if (!isNaN(na) && !isNaN(nb) && String(a).trim() !== '' && String(b).trim() !== '') {
+                if (operator === '>') return na > nb;
+                if (operator === '<') return na < nb;
+                if (operator === '>=') return na >= nb;
+                if (operator === '<=') return na <= nb;
+              }
+              const sa = String(a);
+              const sb = String(b);
+              if (operator === '>') return sa > sb;
+              if (operator === '<') return sa < sb;
+              if (operator === '>=') return sa >= sb;
+              if (operator === '<=') return sa <= sb;
+              if (operator === '==') return sa === sb;
+              if (operator === '!=') return sa !== sb;
+              if (operator === 'contains') return sa.includes(sb);
+              return false;
+            };
+            
+            if (!compare(val, condVal, op)) {
               nextIndex++;
               continue;
             }
@@ -331,17 +348,34 @@ export const localDb = {
           const step = newResponse.workflow[currentIndex];
           if (step.condition) {
             const val = answers[step.condition.fieldId] || '';
-            let met = false;
             const condVal = step.condition.value;
-            if (step.condition.operator === '==') met = String(val) === String(condVal);
-            if (step.condition.operator === '!=') met = String(val) !== String(condVal);
-            if (step.condition.operator === '>') met = Number(val) > Number(condVal);
-            if (step.condition.operator === '<') met = Number(val) < Number(condVal);
-            if (step.condition.operator === 'contains') met = String(val).includes(String(condVal));
-            if (step.condition.operator === 'exists') met = !!val;
-            if (step.condition.operator === 'not_exists') met = !val;
+            const op = step.condition.operator;
             
-            if (!met) {
+            const compare = (a: any, b: any, operator: string) => {
+              if (operator === 'exists') return !!a;
+              if (operator === 'not_exists') return !a;
+              if (a === undefined || a === null || b === undefined || b === null) return false;
+              const na = Number(a);
+              const nb = Number(b);
+              if (!isNaN(na) && !isNaN(nb) && String(a).trim() !== '' && String(b).trim() !== '') {
+                if (operator === '>') return na > nb;
+                if (operator === '<') return na < nb;
+                if (operator === '>=') return na >= nb;
+                if (operator === '<=') return na <= nb;
+              }
+              const sa = String(a);
+              const sb = String(b);
+              if (operator === '>') return sa > sb;
+              if (operator === '<') return sa < sb;
+              if (operator === '>=') return sa >= sb;
+              if (operator === '<=') return sa <= sb;
+              if (operator === '==') return sa === sb;
+              if (operator === '!=') return sa !== sb;
+              if (operator === 'contains') return sa.includes(sb);
+              return false;
+            };
+            
+            if (!compare(val, condVal, op)) {
               currentIndex++;
               continue;
             }
@@ -394,17 +428,34 @@ export const localDb = {
         const nextStep = response.workflow![nextIndex];
         if (nextStep.condition) {
           const val = answers[nextStep.condition.fieldId] || '';
-          let met = false;
           const condVal = nextStep.condition.value;
-          if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
-          if (nextStep.condition.operator === '!=') met = String(val) !== String(condVal);
-          if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
-          if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
-          if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
-          if (nextStep.condition.operator === 'exists') met = !!val;
-          if (nextStep.condition.operator === 'not_exists') met = !val;
+          const op = nextStep.condition.operator;
           
-          if (!met) {
+          const compare = (a: any, b: any, operator: string) => {
+            if (operator === 'exists') return !!a;
+            if (operator === 'not_exists') return !a;
+            if (a === undefined || a === null || b === undefined || b === null) return false;
+            const na = Number(a);
+            const nb = Number(b);
+            if (!isNaN(na) && !isNaN(nb) && String(a).trim() !== '' && String(b).trim() !== '') {
+              if (operator === '>') return na > nb;
+              if (operator === '<') return na < nb;
+              if (operator === '>=') return na >= nb;
+              if (operator === '<=') return na <= nb;
+            }
+            const sa = String(a);
+            const sb = String(b);
+            if (operator === '>') return sa > sb;
+            if (operator === '<') return sa < sb;
+            if (operator === '>=') return sa >= sb;
+            if (operator === '<=') return sa <= sb;
+            if (operator === '==') return sa === sb;
+            if (operator === '!=') return sa !== sb;
+            if (operator === 'contains') return sa.includes(sb);
+            return false;
+          };
+          
+          if (!compare(val, condVal, op)) {
             nextIndex++;
             continue;
           }
