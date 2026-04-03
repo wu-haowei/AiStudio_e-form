@@ -173,9 +173,12 @@ export const localDb = {
             let met = false;
             const condVal = nextStep.condition.value;
             if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
+            if (nextStep.condition.operator === '!=') met = String(val) !== String(condVal);
             if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
             if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
             if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
+            if (nextStep.condition.operator === 'exists') met = !!val;
+            if (nextStep.condition.operator === 'not_exists') met = !val;
             
             if (!met) {
               nextIndex++;
@@ -331,9 +334,12 @@ export const localDb = {
             let met = false;
             const condVal = step.condition.value;
             if (step.condition.operator === '==') met = String(val) === String(condVal);
+            if (step.condition.operator === '!=') met = String(val) !== String(condVal);
             if (step.condition.operator === '>') met = Number(val) > Number(condVal);
             if (step.condition.operator === '<') met = Number(val) < Number(condVal);
             if (step.condition.operator === 'contains') met = String(val).includes(String(condVal));
+            if (step.condition.operator === 'exists') met = !!val;
+            if (step.condition.operator === 'not_exists') met = !val;
             
             if (!met) {
               currentIndex++;
@@ -391,9 +397,12 @@ export const localDb = {
           let met = false;
           const condVal = nextStep.condition.value;
           if (nextStep.condition.operator === '==') met = String(val) === String(condVal);
+          if (nextStep.condition.operator === '!=') met = String(val) !== String(condVal);
           if (nextStep.condition.operator === '>') met = Number(val) > Number(condVal);
           if (nextStep.condition.operator === '<') met = Number(val) < Number(condVal);
           if (nextStep.condition.operator === 'contains') met = String(val).includes(String(condVal));
+          if (nextStep.condition.operator === 'exists') met = !!val;
+          if (nextStep.condition.operator === 'not_exists') met = !val;
           
           if (!met) {
             nextIndex++;

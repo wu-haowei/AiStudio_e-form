@@ -21,6 +21,7 @@ export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'tex
 export interface FormFieldRule {
   id: string;
   conditionFieldId: string;
+  conditionOperator?: '==' | '!=' | 'contains' | 'exists' | 'not_exists';
   conditionValue: any;
   effect: 'hide' | 'show' | 'require' | 'optional';
 }
@@ -42,7 +43,7 @@ export interface WorkflowStep {
   approverId?: string; // Specific user UID if type is 'user'
   condition?: {
     fieldId: string;
-    operator: '>' | '<' | '==' | 'contains';
+    operator: '>' | '<' | '==' | 'contains' | 'exists' | 'not_exists';
     value: any;
   };
 }

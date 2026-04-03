@@ -1537,6 +1537,7 @@ function SystemGuideView() {
                         <li>• <strong>附件限制：</strong>單一附件大小上限為 10MB，僅支援常見文件與圖片格式。</li>
                         <li>• <strong>目標單位：</strong>可指定特定單位填寫，或設定為「公開」供全體人員填寫。</li>
                         <li>• <strong>審核流設定：</strong>可選擇「僅單位主管」或「需總管理者」等多種審核路徑。</li>
+                        <li>• <strong>邏輯跳題：</strong>支援根據前題答案（如：是否上傳檔案）動態顯示/隱藏後續題目或變更必填屬性。</li>
                       </ul>
                     </div>
 
@@ -2057,6 +2058,13 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                       onChange={(e) => {
                         const newRules = [...(field.rules || [])];
                         newRules[ruleIdx].conditionFieldId = e.target.value;
+                        // Default operator based on field type
+                        const targetField = fields.find(f => f.id === e.target.value);
+                        if (targetField?.type === 'file') {
+                          newRules[ruleIdx].conditionOperator = 'exists';
+                        } else {
+                          newRules[ruleIdx].conditionOperator = '==';
+                        }
                         updateField(field.id, { rules: newRules });
                       }}
                       className="p-1.5 rounded border border-gray-200 text-[10px] outline-none"
@@ -2066,18 +2074,35 @@ function FormFieldManager({ fields, setFields }: { fields: FormField[], setField
                         <option key={f.id} value={f.id}>{f.label || `題目 ${fields.indexOf(f) + 1}`}</option>
                       ))}
                     </select>
-                    <span className="text-[10px] text-gray-400">當值為</span>
-                    <input
-                      type="text"
-                      value={rule.conditionValue}
+                    <select
+                      value={rule.conditionOperator || '=='}
                       onChange={(e) => {
                         const newRules = [...(field.rules || [])];
-                        newRules[ruleIdx].conditionValue = e.target.value;
+                        newRules[ruleIdx].conditionOperator = e.target.value as any;
                         updateField(field.id, { rules: newRules });
                       }}
-                      placeholder="條件值"
-                      className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
-                    />
+                      className="p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                    >
+                      <option value="==">等於</option>
+                      <option value="!=">不等於</option>
+                      <option value="contains">包含</option>
+                      <option value="exists">已上傳檔案</option>
+                      <option value="not_exists">未上傳檔案</option>
+                    </select>
+                    {(!rule.conditionOperator || (rule.conditionOperator !== 'exists' && rule.conditionOperator !== 'not_exists')) && (
+                      <input
+                        type="text"
+                        value={rule.conditionValue}
+                        onChange={(e) => {
+                          const newRules = [...(field.rules || [])];
+                          newRules[ruleIdx].conditionValue = e.target.value;
+                          updateField(field.id, { rules: newRules });
+                        }}
+                        placeholder="條件值"
+                        className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                      />
+                    )}
+                    <span className="text-[10px] text-gray-400">則</span>
                     <select
                       value={rule.effect}
                       onChange={(e) => {
@@ -2248,17 +2273,22 @@ function WorkflowManager({ workflow, setWorkflow, fields, title = "自定義審�
                     className="p-1.5 rounded border border-gray-200 text-[10px] outline-none"
                   >
                     <option value="==">等於</option>
+                    <option value="!=">不等於</option>
                     <option value=">">大於</option>
                     <option value="<">小於</option>
                     <option value="contains">包含</option>
+                    <option value="exists">已上傳檔案</option>
+                    <option value="not_exists">未上傳檔案</option>
                   </select>
-                  <input
-                    type="text"
-                    value={step.condition.value}
-                    onChange={(e) => updateStep(step.id, { condition: { ...step.condition!, value: e.target.value } })}
-                    placeholder="條件值"
-                    className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
-                  />
+                  {step.condition.operator !== 'exists' && step.condition.operator !== 'not_exists' && (
+                    <input
+                      type="text"
+                      value={step.condition.value}
+                      onChange={(e) => updateStep(step.id, { condition: { ...step.condition!, value: e.target.value } })}
+                      placeholder="條件值"
+                      className="w-20 p-1.5 rounded border border-gray-200 text-[10px] outline-none"
+                    />
+                  )}
                   <span className="text-[9px] text-gray-400">時需審核</span>
                 </div>
               )}
@@ -3506,7 +3536,15 @@ function ResponseUpload({ form, profile, showHistory = true, showToast, onlyShow
 
     field.rules.forEach(rule => {
       const condVal = answers[rule.conditionFieldId];
-      const met = String(condVal) === String(rule.conditionValue);
+      let met = false;
+      
+      const op = rule.conditionOperator || '==';
+      if (op === '==') met = String(condVal) === String(rule.conditionValue);
+      else if (op === '!=') met = String(condVal) !== String(rule.conditionValue);
+      else if (op === 'contains') met = String(condVal).includes(String(rule.conditionValue));
+      else if (op === 'exists') met = !!condVal;
+      else if (op === 'not_exists') met = !condVal;
+
       if (met) {
         if (rule.effect === 'show') visible = true;
         if (rule.effect === 'hide') visible = false;
