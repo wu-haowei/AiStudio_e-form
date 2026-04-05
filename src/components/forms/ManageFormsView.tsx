@@ -4,9 +4,8 @@ import {
   Search, Filter, CheckCircle, XCircle, Trash2, Edit, History, 
   ChevronRight, ChevronLeft, Upload, Plus, X, Eye
 } from 'lucide-react';
-import { Form, UserProfile, FormField, WorkflowStep, FieldType, FormFieldRule } from '../../types';
+import { Form, UserProfile, FormField, WorkflowStep, FieldType, FormFieldRule, Department } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { DEPARTMENTS } from '../../constants/departments';
 import { StatusBadge } from '../common/StatusBadge';
 import { EditFormModal } from './EditFormModal';
 import { LogsModal } from './LogsModal';
@@ -14,6 +13,7 @@ import { LogsModal } from './LogsModal';
 interface ManageFormsViewProps {
   forms: Form[];
   profile: UserProfile;
+  departments: Department[];
   showToast: (msg: string, type?: 'success' | 'error') => void;
   setViewingResponses: (form: Form | null) => void;
   setViewingResponsesHistory: (form: Form | null) => void;
@@ -25,6 +25,7 @@ interface ManageFormsViewProps {
 export function ManageFormsView({ 
   forms: initialForms, 
   profile, 
+  departments,
   showToast, 
   setViewingResponses, 
   setViewingResponsesHistory, 
@@ -69,21 +70,54 @@ export function ManageFormsView({
     }
   };
 
+  const canApproveForm = (form: Form, profile: UserProfile) => {
+    if (form.status !== 'pending') return false;
+
+    // Custom Workflow
+    if (form.workflow && form.workflow.length > 0) {
+      const currentStep = form.workflow[form.currentWorkflowStepIndex || 0];
+      if (!currentStep) return false;
+      if (currentStep.approverType === 'super_admin') return profile.role === 'super_admin';
+      if (currentStep.approverType === 'dept_manager') return profile.role === 'admin' && profile.departmentId === form.departmentId;
+      if (currentStep.approverType === 'user') return profile.uid === currentStep.approverId;
+      return false;
+    }
+
+    // Default Workflow
+    if (profile.role === 'super_admin') return true; // Super admin can approve anything
+    
+    if (profile.role === 'admin') {
+      if (form.approvalStep === 'dept_manager') {
+        return profile.departmentId === form.departmentId;
+      }
+      if (form.approvalStep === 'target_managers') {
+        return form.targetDepartmentIds?.includes(profile.departmentId) && !form.approvals?.[profile.departmentId];
+      }
+      if (form.approvalStep === 'super_admin') {
+        return false; // Only super admin
+      }
+    }
+
+    return false;
+  };
+
   const filteredForms = forms.filter(form => {
     const matchesSearch = form.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          form.authorName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || form.status === statusFilter;
     
-    // Permission check: admin sees all, others see their own or those they need to approve
+    const isSuperAdmin = profile.role === 'super_admin';
     const isAuthor = form.authorUid === profile.uid;
-    const isApprover = form.workflow?.some(step => 
-      (step.approverType === 'super_admin' && profile.role === 'super_admin') ||
-      (step.approverType === 'dept_manager' && profile.role === 'admin' && profile.departmentId === form.departmentId) ||
-      (step.approverType === 'user' && step.approverId === profile.uid)
-    );
-    const isAdmin = profile.role === 'super_admin' || profile.role === 'admin';
+    const isApprover = canApproveForm(form, profile);
+    
+    // For management view, we show:
+    // 1. Everything to Super Admin
+    // 2. Own forms to everyone
+    // 3. Forms the user needs to approve right now
+    // 4. Forms from the user's department (if they are an admin)
+    const isDeptAdmin = profile.role === 'admin' && form.departmentId === profile.departmentId;
 
-    return matchesSearch && matchesStatus && (isAdmin || isAuthor || isApprover);
+    return matchesSearch && matchesStatus && (isSuperAdmin || isAuthor || isApprover || isDeptAdmin);
   });
 
   return (
@@ -182,7 +216,7 @@ export function ManageFormsView({
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        {viewMode === 'forms' && form.status === 'pending' && (
+                        {viewMode === 'forms' && canApproveForm(form, profile) && (
                           <>
                             <button
                               onClick={() => handleApproval(form, 'approve')}
@@ -302,14 +336,14 @@ export function ManageFormsView({
                   <div className="text-right">
                     <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">單位</p>
                     <p className="text-xs text-gray-700 truncate">
-                      {DEPARTMENTS.find(d => d.id === form.departmentId)?.name || '未知'}
+                      {departments.find(d => d.id === form.departmentId)?.name || '未知'}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
-                    {viewMode === 'forms' && form.status === 'pending' && (
+                    {viewMode === 'forms' && canApproveForm(form, profile) && (
                       <>
                         <button
                           onClick={() => handleApproval(form, 'approve')}
@@ -389,6 +423,7 @@ export function ManageFormsView({
         <EditFormModal 
           form={editingForm} 
           profile={profile} 
+          departments={departments}
           onClose={() => setEditingForm(null)} 
           showToast={showToast}
         />

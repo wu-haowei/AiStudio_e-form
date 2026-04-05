@@ -1,14 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Download, Upload, History, X, XCircle, Eye, Paperclip } from 'lucide-react';
-import { Form, UserProfile } from '../../types';
-import { DEPARTMENTS } from '../../constants/departments';
+import { Form, UserProfile, Department } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { ResponseUpload } from './ResponseUpload';
 
 interface FormDetailModalProps {
   form: Form;
   profile: UserProfile;
+  departments: Department[];
   onClose: () => void;
   onVoid: (id: string) => void;
   onVoidResponse: (formId: string, responseId: string) => void;
@@ -19,6 +19,7 @@ interface FormDetailModalProps {
 export function FormDetailModal({ 
   form, 
   profile, 
+  departments,
   onClose, 
   onVoid, 
   onVoidResponse, 
@@ -40,7 +41,7 @@ export function FormDetailModal({
               <h3 className="text-xl font-bold truncate">{form.title}</h3>
             </div>
             <p className="text-xs text-gray-500">
-              由 {form.authorName} ({DEPARTMENTS.find(d => d.id === form.departmentId)?.name}) 於 {new Date(form.createdAt).toLocaleDateString()} 提交
+              由 {form.authorName} ({departments.find(d => d.id === form.departmentId)?.name}) 於 {new Date(form.createdAt).toLocaleDateString()} 提交
             </p>
           </div>
           <div className="flex items-center gap-2">

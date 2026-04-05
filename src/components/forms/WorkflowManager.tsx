@@ -158,9 +158,20 @@ interface WorkflowManagerProps {
   setWorkflow: React.Dispatch<React.SetStateAction<WorkflowStep[]>>;
   fields: FormField[];
   title?: string;
+  isPublic?: boolean;
+  targetDepartmentIds?: string[];
+  profile?: UserProfile;
 }
 
-export function WorkflowManager({ workflow, setWorkflow, fields, title = "自定義審核流程" }: WorkflowManagerProps) {
+export function WorkflowManager({ 
+  workflow, 
+  setWorkflow, 
+  fields, 
+  title = "自定義審核流程",
+  isPublic = false,
+  targetDepartmentIds = [],
+  profile
+}: WorkflowManagerProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
 
   const sensors = useSensors(
@@ -218,6 +229,31 @@ export function WorkflowManager({ workflow, setWorkflow, fields, title = "自定
     }
   };
 
+  const getDefaultSteps = () => {
+    if (!profile) return [];
+    const steps: { label: string; type: string }[] = [];
+    const isCrossDept = !isPublic && targetDepartmentIds.some(id => id !== profile.departmentId);
+
+    if (profile.role === 'user') {
+      steps.push({ label: '單位主管審核', type: '單位主管' });
+      if (isPublic) {
+        steps.push({ label: '總管理者審核', type: '總管理員' });
+      } else if (isCrossDept) {
+        steps.push({ label: '發佈單位主管審核', type: '目標單位主管' });
+      }
+    } else if (profile.role === 'admin') {
+      if (isPublic) {
+        steps.push({ label: '總管理者審核', type: '總管理員' });
+      } else if (isCrossDept) {
+        steps.push({ label: '發佈單位主管審核', type: '目標單位主管' });
+      }
+    }
+
+    return steps;
+  };
+
+  const defaultSteps = getDefaultSteps();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -257,8 +293,28 @@ export function WorkflowManager({ workflow, setWorkflow, fields, title = "自定
       </DndContext>
 
       {workflow.length === 0 && (
-        <div className="text-center py-8 border-2 border-dashed border-gray-100 rounded-3xl">
-          <p className="text-xs text-gray-400">尚無自定義審核流程，將使用預設流程</p>
+        <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 p-6">
+          <div className="text-center mb-4">
+            <p className="text-xs font-bold text-gray-500">尚無自定義審核流程，將使用預設流程</p>
+          </div>
+          
+          {defaultSteps.length > 0 ? (
+            <div className="space-y-3">
+              {defaultSteps.map((step, idx) => (
+                <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm opacity-60">
+                  <span className="w-5 h-5 bg-gray-400 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{idx + 1}</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-gray-700">{step.label}</p>
+                    <p className="text-[9px] text-gray-400">審核人: {step.type}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-[10px] text-green-600 font-bold">✓ 此設定下將自動核准，無需審核</p>
+            </div>
+          )}
         </div>
       )}
     </div>

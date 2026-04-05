@@ -1,6 +1,5 @@
 import React from 'react';
-import { Form, UserProfile, FormResponse } from '../../types';
-import { DEPARTMENTS } from '../../constants/departments';
+import { Form, UserProfile, FormResponse, Department } from '../../types';
 import { getSubDepartmentIds } from '../../utils/departmentUtils';
 import { StatCard } from '../common/StatCard';
 import { 
@@ -19,6 +18,7 @@ import {
 export function DashboardView({ 
   forms, 
   profile, 
+  departments,
   showToast, 
   setViewingResponses, 
   setActiveTab,
@@ -26,12 +26,13 @@ export function DashboardView({
 }: { 
   forms: Form[], 
   profile: UserProfile, 
+  departments: Department[],
   showToast: (msg: string, type?: 'success' | 'error') => void, 
   setViewingResponses: (f: Form | null) => void, 
   setActiveTab: (tab: any) => void,
   setManageViewMode: (v: 'forms' | 'responses') => void
 }) {
-  const subDeptIds = getSubDepartmentIds(profile.departmentId);
+  const subDeptIds = getSubDepartmentIds(profile.departmentId, departments);
 
   // Filter for Dashboard: 
   // 1. "為審核者不能出現在儀表板上"
@@ -155,10 +156,14 @@ export function DashboardView({
                   <div>
                     <h4 className="font-bold text-blue-900">{form.title}</h4>
                     <p className="text-xs text-blue-700">
-                      建立者: {form.authorName} • 單位: {DEPARTMENTS.find(d => d.id === form.departmentId)?.name} • {new Date(form.createdAt).toLocaleString()}
+                      建立者: {form.authorName} • 單位: {departments.find(d => d.id === form.departmentId)?.name} • {new Date(form.createdAt).toLocaleString()}
                     </p>
                     <p className="text-[10px] font-bold text-blue-600 mt-1">
-                      當前步驟: {form.workflow?.[form.currentWorkflowStepIndex || 0].label}
+                      當前步驟: {form.workflow?.[form.currentWorkflowStepIndex || 0]?.label || (
+                        form.approvalStep === 'dept_manager' ? '單位主管審核' :
+                        form.approvalStep === 'target_managers' ? '跨部門主管審核' :
+                        form.approvalStep === 'super_admin' ? '總管理者審核' : '待處理'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -199,10 +204,12 @@ export function DashboardView({
                   <div>
                     <h4 className="font-bold text-orange-900">{form.title} - 回傳資料</h4>
                     <p className="text-xs text-orange-700">
-                      回傳者: {response.responderName} • 單位: {DEPARTMENTS.find(d => d.id === response.responderDepartmentId)?.name} • {new Date(response.respondedAt).toLocaleString()}
+                      回傳者: {response.responderName} • 單位: {departments.find(d => d.id === response.responderDepartmentId)?.name} • {new Date(response.respondedAt).toLocaleString()}
                     </p>
                     <p className="text-[10px] font-bold text-orange-600 mt-1">
-                      當前步驟: {response.workflow?.[response.currentWorkflowStepIndex || 0].label}
+                      當前步驟: {response.workflow?.[response.currentWorkflowStepIndex || 0]?.label || (
+                        response.status === 'pending' ? '主管審核中' : '待處理'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -263,7 +270,7 @@ export function DashboardView({
                       )}
                     </div>
                     <p className="text-xs sm:text-sm text-gray-500 truncate">
-                      單位: {DEPARTMENTS.find(d => d.id === form.departmentId)?.name} • 由 {form.authorName} 提交 • {new Date(form.createdAt).toLocaleDateString()}
+                      單位: {departments.find(d => d.id === form.departmentId)?.name} • 由 {form.authorName} 提交 • {new Date(form.createdAt).toLocaleDateString()}
                     </p>
                     {form.attachmentUrl && (
                       <a 
@@ -300,7 +307,7 @@ export function DashboardView({
                                 return (
                                   <div key={tid} className="flex items-center gap-1">
                                     {isApproved ? <CheckCircle size={8} className="text-green-500" /> : <div className="w-2 h-2 rounded-full border border-gray-300" />}
-                                    <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{DEPARTMENTS.find(d => d.id === tid)?.name}</span>
+                                    <span className={isApproved ? 'text-green-700' : 'text-gray-500'}>{departments.find(d => d.id === tid)?.name}</span>
                                   </div>
                                 );
                               })}

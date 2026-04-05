@@ -2,9 +2,10 @@ import { openDB, IDBPDatabase } from 'idb';
 import { UserProfile, Form } from '../types';
 
 const DB_NAME = 'app_database';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const USERS_STORE = 'users';
 const FORMS_STORE = 'forms';
+const DEPARTMENTS_STORE = 'departments';
 const SESSION_STORE = 'session';
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -18,6 +19,9 @@ const getDb = () => {
         }
         if (!db.objectStoreNames.contains(FORMS_STORE)) {
           db.createObjectStore(FORMS_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(DEPARTMENTS_STORE)) {
+          db.createObjectStore(DEPARTMENTS_STORE, { keyPath: 'id' });
         }
         if (!db.objectStoreNames.contains(SESSION_STORE)) {
           db.createObjectStore(SESSION_STORE);
@@ -62,6 +66,38 @@ export const localDb = {
     notifyUpdate();
   },
 
+  // Departments
+  getDepartments: async (includeDeleted = false): Promise<any[]> => {
+    const db = await getDb();
+    const all = await db.getAll(DEPARTMENTS_STORE);
+    
+    // Initialize if empty
+    if (all.length === 0) {
+      const { DEPARTMENTS } = await import('../constants/departments');
+      for (const dept of DEPARTMENTS) {
+        await db.put(DEPARTMENTS_STORE, { ...dept, isDeleted: false });
+      }
+      return DEPARTMENTS.map(d => ({ ...d, isDeleted: false }));
+    }
+    
+    if (includeDeleted) return all;
+    return all.filter(d => !d.isDeleted);
+  },
+  saveDepartment: async (dept: any) => {
+    const db = await getDb();
+    await db.put(DEPARTMENTS_STORE, { ...dept, isDeleted: !!dept.isDeleted });
+    notifyUpdate();
+  },
+  deleteDepartment: async (id: string) => {
+    const db = await getDb();
+    const dept = await db.get(DEPARTMENTS_STORE, id);
+    if (dept) {
+      dept.isDeleted = true;
+      await db.put(DEPARTMENTS_STORE, dept);
+      notifyUpdate();
+    }
+  },
+
   // Forms
   getForms: async (): Promise<Form[]> => {
     const db = await getDb();
@@ -83,6 +119,9 @@ export const localDb = {
     let status: Form['status'] = 'pending';
     let approvalStep: Form['approvalStep'] = 'dept_manager';
     const approvals: { [deptId: string]: boolean } = {};
+    if (form.targetDepartmentIds) {
+      form.targetDepartmentIds.forEach(tid => approvals[tid] = false);
+    }
 
     // If custom workflow is provided, use it
     if (form.workflow && form.workflow.length > 0) {
@@ -97,24 +136,22 @@ export const localDb = {
       };
     }
 
+    const isCrossDept = !form.isPublic && form.targetDepartmentIds?.some(id => id !== user.departmentId);
+
     if (user.role === 'super_admin') {
       status = 'approved';
       approvalStep = 'completed';
     } else if (user.role === 'admin') {
       if (form.isPublic) {
         approvalStep = 'super_admin';
-      } else if (form.targetDepartmentIds && form.targetDepartmentIds.length > 0) {
+      } else if (isCrossDept) {
         approvalStep = 'target_managers';
-        form.targetDepartmentIds.forEach(tid => approvals[tid] = false);
       } else {
         status = 'approved';
         approvalStep = 'completed';
       }
     } else {
       approvalStep = 'dept_manager';
-      if (form.targetDepartmentIds) {
-        form.targetDepartmentIds.forEach(tid => approvals[tid] = false);
-      }
     }
 
     return {
@@ -221,9 +258,11 @@ export const localDb = {
     } else if (user.role === 'admin') {
       if (form.approvalStep === 'dept_manager' && user.departmentId === form.departmentId) {
         form.deptManagerApproved = true;
+        const isCrossDept = !form.isPublic && form.targetDepartmentIds?.some(id => id !== form.departmentId);
+        
         if (form.isPublic) {
           form.approvalStep = 'super_admin';
-        } else if (form.targetDepartmentIds && form.targetDepartmentIds.length > 0) {
+        } else if (isCrossDept) {
           form.approvalStep = 'target_managers';
         } else {
           form.status = 'approved';

@@ -14,6 +14,7 @@ export interface Department {
   name: string;
   parentId: string | null;
   level: number;
+  isDeleted?: boolean;
 }
 
 export type FieldType = 'text' | 'number' | 'date' | 'radio' | 'checkbox' | 'textarea' | 'select' | 'file';

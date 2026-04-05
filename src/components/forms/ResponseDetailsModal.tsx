@@ -1,20 +1,20 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Eye, X, Paperclip, CheckCircle, XCircle } from 'lucide-react';
-import { Form, UserProfile } from '../../types';
-import { DEPARTMENTS } from '../../constants/departments';
+import { Form, UserProfile, Department } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 
 interface ResponseDetailsModalProps {
   form: Form;
   response: any;
   profile: UserProfile;
+  departments: Department[];
   onClose: () => void;
   onApprove?: (formId: string, responseId: string) => void;
   onReject?: (formId: string, responseId: string) => void;
 }
 
-export function ResponseDetailsModal({ form, response, profile, onClose, onApprove, onReject }: ResponseDetailsModalProps) {
+export function ResponseDetailsModal({ form, response, profile, departments, onClose, onApprove, onReject }: ResponseDetailsModalProps) {
   const currentStep = response.workflow?.[response.currentWorkflowStepIndex || 0];
   const isApprover = !!(currentStep && (
     (currentStep.approverType === 'super_admin' && profile.role === 'super_admin') ||
@@ -47,7 +47,7 @@ export function ResponseDetailsModal({ form, response, profile, onClose, onAppro
               </div>
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase">單位</p>
-                <p className="text-sm font-bold">{DEPARTMENTS.find(d => d.id === response.responderDepartmentId)?.name}</p>
+                <p className="text-sm font-bold">{departments.find(d => d.id === response.responderDepartmentId)?.name}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase">回傳時間</p>

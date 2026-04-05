@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, Form, Role, FormResponse } from './types';
+import { UserProfile, Form, Role, FormResponse, Department } from './types';
 import { localDb } from './lib/localDb';
 import { 
   LayoutDashboard, 
@@ -21,7 +21,7 @@ import { LoginView } from './components/auth/LoginView';
 import { ProfileSetupView } from './components/auth/ProfileSetupView';
 import { SystemGuideView } from './components/guide/SystemGuideView';
 import { DashboardView } from './components/dashboard/DashboardView';
-import { UserManagementView } from './components/users/UserManagementView';
+import { SettingsView } from './components/admin/SettingsView';
 import { SubmitFormView } from './components/forms/SubmitFormView';
 import { ManageFormsView } from './components/forms/ManageFormsView';
 import { SidebarItem } from './components/layout/SidebarItem';
@@ -31,7 +31,6 @@ import { ResponseDetailsModal } from './components/forms/ResponseDetailsModal';
 import { VoidConfirmationModal, VoidResponseConfirmationModal } from './components/forms/VoidConfirmationModal';
 
 // Constants & Utils
-import { DEPARTMENTS } from './constants/departments';
 
 // Mock User Type
 interface MockUser {
@@ -46,7 +45,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState<Form[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'submit' | 'manage' | 'users' | 'guide'>('dashboard');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'submit' | 'manage' | 'settings' | 'guide'>('dashboard');
   const [manageViewMode, setManageViewMode] = useState<'forms' | 'responses'>('forms');
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -140,7 +140,9 @@ export default function App() {
     const updateForms = async () => {
       const allForms = await localDb.getForms();
       const allUsers = await localDb.getUsers();
+      const allDepts = await localDb.getDepartments(true);
       setUsers(allUsers);
+      setDepartments(allDepts);
 
       const sortedForms = allForms.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
@@ -312,10 +314,10 @@ export default function App() {
           {profile?.role === 'super_admin' && (
             <SidebarItem 
               icon={<Users size={20} />} 
-              label="帳號管理" 
-              active={activeTab === 'users'} 
+              label="系統設定" 
+              active={activeTab === 'settings'} 
               onClick={() => {
-                setActiveTab('users');
+                setActiveTab('settings');
                 if (isMobile) setIsSidebarOpen(false);
               }} 
             />
@@ -329,7 +331,7 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0 overflow-hidden">
               <p className="text-sm font-semibold truncate">{profile?.displayName}</p>
-              <p className="text-xs text-gray-500 truncate">{DEPARTMENTS.find(d => d.id === profile?.departmentId)?.name}</p>
+              <p className="text-xs text-gray-500 truncate">{departments.find(d => d.id === profile?.departmentId)?.name}</p>
             </div>
           </div>
           <button 
@@ -365,6 +367,7 @@ export default function App() {
               <DashboardView 
                 forms={forms} 
                 profile={profile!} 
+                departments={departments}
                 showToast={showToast} 
                 setViewingResponses={setViewingResponses}
                 setActiveTab={setActiveTab}
@@ -379,7 +382,12 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <SubmitFormView profile={profile!} onComplete={() => setActiveTab('dashboard')} showToast={showToast} />
+              <SubmitFormView 
+                profile={profile!} 
+                departments={departments}
+                onComplete={() => setActiveTab('dashboard')} 
+                showToast={showToast} 
+              />
             </motion.div>
           )}
           {activeTab === 'manage' && (
@@ -392,6 +400,7 @@ export default function App() {
               <ManageFormsView 
                 forms={forms} 
                 profile={profile!} 
+                departments={departments}
                 showToast={showToast} 
                 setViewingResponses={setViewingResponses}
                 setViewingResponsesHistory={setViewingResponsesHistory}
@@ -401,14 +410,14 @@ export default function App() {
               />
             </motion.div>
           )}
-          {activeTab === 'users' && profile?.role === 'super_admin' && (
+          {activeTab === 'settings' && profile?.role === 'super_admin' && (
             <motion.div
-              key="users"
+              key="settings"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <UserManagementView users={users} showToast={showToast} />
+              <SettingsView users={users} departments={departments} showToast={showToast} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -437,6 +446,7 @@ export default function App() {
           <FormDetailModal 
             form={viewingResponses}
             profile={profile!}
+            departments={departments}
             onClose={() => setViewingResponses(null)}
             onVoid={setConfirmVoidId}
             onVoidResponse={(formId, responseId) => setConfirmVoidResponse({ formId, responseId })}
@@ -463,6 +473,7 @@ export default function App() {
           <ResponseHistoryModal 
             form={viewingResponsesHistory}
             profile={profile!}
+            departments={departments}
             onClose={() => setViewingResponsesHistory(null)}
             showToast={showToast}
           />
@@ -473,6 +484,7 @@ export default function App() {
             form={viewingResponseDetails.form}
             response={viewingResponseDetails.response}
             profile={profile!}
+            departments={departments}
             onClose={() => setViewingResponseDetails(null)}
             onApprove={async (formId, responseId) => {
               try {

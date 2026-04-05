@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
-import { Role } from '../../types';
-import { DEPARTMENTS } from '../../constants/departments';
+import React, { useState, useEffect } from 'react';
+import { Role, Department } from '../../types';
+import { localDb } from '../../lib/localDb';
 
 export function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: string) => void }) {
   const [role, setRole] = useState<Role>('user');
-  const [dept, setDept] = useState('mgmt');
+  const [dept, setDept] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  useEffect(() => {
+    const fetchDepts = async () => {
+      const depts = await localDb.getDepartments();
+      setDepartments(depts);
+      if (depts.length > 0) setDept(depts[0].id);
+    };
+    fetchDepts();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F5F5F4] flex items-center justify-center p-4">
@@ -22,7 +32,7 @@ export function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: stri
                     role === r ? 'border-[#141414] bg-gray-50' : 'border-gray-100 hover:border-gray-200'
                   }`}
                 >
-                  <p className="font-bold capitalize text-sm sm:text-base">{r.replace('_', ' ')}</p>
+                  <p className="font-bold capitalize text-sm sm:text-base">{r === 'super_admin' ? '超級管理員' : r === 'admin' ? '單位管理者' : '一般使用者'}</p>
                 </button>
               ))}
             </div>
@@ -35,7 +45,7 @@ export function ProfileSetupView({ onSetup }: { onSetup: (role: Role, dept: stri
               onChange={(e) => setDept(e.target.value)}
               className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all"
             >
-              {DEPARTMENTS.map(d => (
+              {departments.map(d => (
                 <option key={d.id} value={d.id}>
                   {'  '.repeat(d.level - 1)} {d.name}
                 </option>

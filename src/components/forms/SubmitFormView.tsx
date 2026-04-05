@@ -1,22 +1,25 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { UserProfile, FormField, WorkflowStep } from '../../types';
+import { UserProfile, FormField, WorkflowStep, Department } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { DEPARTMENTS } from '../../constants/departments';
+import { getDeptBreadcrumb } from '../../utils/departmentUtils';
 import { FormFieldManager } from './FormFieldManager';
 import { WorkflowManager } from './WorkflowManager';
 
 interface SubmitFormViewProps {
   profile: UserProfile;
+  departments: Department[];
   onComplete: () => void;
   showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
-export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormViewProps) {
+export function SubmitFormView({ profile, departments, onComplete, showToast }: SubmitFormViewProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [isPublic, setIsPublic] = useState(false);
-  const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>([]);
+  const [isPublic, setIsPublic] = useState(profile.role === 'super_admin');
+  const [targetDepartmentIds, setTargetDepartmentIds] = useState<string[]>(
+    profile.role === 'super_admin' ? [] : [profile.departmentId]
+  );
   const [publishStartTime, setPublishStartTime] = useState('');
   const [publishEndTime, setPublishEndTime] = useState('');
   const [fields, setFields] = useState<FormField[]>([]);
@@ -36,6 +39,10 @@ export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormVie
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !content) return;
+    if (!isPublic && targetDepartmentIds.length === 0) {
+      showToast('請至少選擇一個發佈單位', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       await localDb.addForm({
@@ -73,47 +80,72 @@ export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormVie
       </header>
 
       <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl border border-[#E5E5E5] shadow-sm space-y-6">
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-2xl border border-blue-100">
-            <input 
-              type="checkbox" 
-              id="is-public" 
-              checked={isPublic}
-              onChange={(e) => setIsPublic(e.target.checked)}
-              className="w-5 h-5 accent-[#141414]"
-            />
-            <label htmlFor="is-public" className="text-sm font-bold text-blue-900">
+        <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-4">
+          <label className="block text-sm font-bold text-gray-700">發佈對象 <span className="text-red-500">*</span></label>
+          
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsPublic(true);
+                setTargetDepartmentIds([]);
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
+                isPublic
+                  ? 'bg-[#141414] text-white border-[#141414]'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+              }`}
+            >
               全部公開
-            </label>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPublic(false);
+                if (targetDepartmentIds.length === 0) {
+                  setTargetDepartmentIds([profile.departmentId]);
+                }
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
+                !isPublic
+                  ? 'bg-[#141414] text-white border-[#141414]'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+              }`}
+            >
+              指定單位
+            </button>
           </div>
 
           {!isPublic && (
-            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
-              <label className="block text-sm font-bold text-gray-700 mb-3">發佈給特定單位 (多選)</label>
+            <div className="pt-4 border-t border-gray-200">
+              <label className="block text-xs font-bold text-gray-500 mb-3 uppercase">選擇發佈單位 (多選)</label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {DEPARTMENTS.map(dept => (
+                {departments.filter(d => !d.isDeleted).map(dept => (
                   <button
                     key={dept.id}
                     type="button"
                     onClick={() => toggleDepartment(dept.id)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border text-left ${
                       targetDepartmentIds.includes(dept.id)
-                        ? 'bg-[#141414] text-white border-[#141414]'
+                        ? 'bg-blue-600 text-white border-blue-600'
                         : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                     }`}
                   >
-                    {dept.name}
+                    <div className="truncate">{dept.name}</div>
+                    <div className={`text-[8px] truncate opacity-70 ${targetDepartmentIds.includes(dept.id) ? 'text-blue-100' : 'text-gray-400'}`}>
+                      {getDeptBreadcrumb(dept.id, departments)}
+                    </div>
                   </button>
                 ))}
               </div>
               {targetDepartmentIds.length === 0 && (
-                <p className="mt-2 text-[10px] text-gray-400 italic">未選擇單位時，僅限本單位及管理員可見</p>
+                <p className="mt-2 text-[10px] text-red-500 italic font-bold">請至少選擇一個單位</p>
               )}
             </div>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-2">發佈開始時間 (選填)</label>
             <div className="relative">
@@ -121,13 +153,13 @@ export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormVie
                 type="datetime-local"
                 value={publishStartTime}
                 onChange={(e) => setPublishStartTime(e.target.value)}
-                className="w-full p-4 pr-12 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all min-h-[56px]"
+                className="w-full p-4 pr-12 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all [&::-webkit-calendar-picker-indicator]:hidden"
               />
               {publishStartTime && (
                 <button
                   type="button"
                   onClick={() => setPublishStartTime('')}
-                  className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
                 >
                   <X size={20} />
                 </button>
@@ -142,13 +174,13 @@ export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormVie
                 type="datetime-local"
                 value={publishEndTime}
                 onChange={(e) => setPublishEndTime(e.target.value)}
-                className="w-full p-4 pr-12 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all min-h-[56px]"
+                className="w-full p-4 pr-12 rounded-2xl border-2 border-gray-100 focus:border-[#141414] outline-none transition-all [&::-webkit-calendar-picker-indicator]:hidden"
               />
               {publishEndTime && (
                 <button
                   type="button"
                   onClick={() => setPublishEndTime('')}
-                  className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
                 >
                   <X size={20} />
                 </button>
@@ -207,11 +239,27 @@ export function SubmitFormView({ profile, onComplete, showToast }: SubmitFormVie
         </div>
 
         <div className="pt-4 border-t border-gray-100">
-          <WorkflowManager workflow={workflow} setWorkflow={setWorkflow} fields={fields} title="表單發佈審核流程" />
+          <WorkflowManager 
+            workflow={workflow} 
+            setWorkflow={setWorkflow} 
+            fields={fields} 
+            title="表單發佈審核流程" 
+            isPublic={isPublic}
+            targetDepartmentIds={targetDepartmentIds}
+            profile={profile}
+          />
         </div>
 
         <div className="pt-4 border-t border-gray-100">
-          <WorkflowManager workflow={responseWorkflow} setWorkflow={setResponseWorkflow} fields={fields} title="回傳資料審核流程" />
+          <WorkflowManager 
+            workflow={responseWorkflow} 
+            setWorkflow={setResponseWorkflow} 
+            fields={fields} 
+            title="回傳資料審核流程" 
+            isPublic={isPublic}
+            targetDepartmentIds={targetDepartmentIds}
+            profile={profile}
+          />
         </div>
 
         {fields.length > 0 && (

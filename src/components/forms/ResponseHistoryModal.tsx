@@ -1,18 +1,18 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardList, X, Download, Paperclip, Check, Trash2 } from 'lucide-react';
-import { Form, UserProfile } from '../../types';
-import { DEPARTMENTS } from '../../constants/departments';
+import { Form, UserProfile, Department } from '../../types';
 import { localDb } from '../../lib/localDb';
 
 interface ResponseHistoryModalProps {
   form: Form;
   profile: UserProfile;
+  departments: Department[];
   onClose: () => void;
   showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
-export function ResponseHistoryModal({ form, profile, onClose, showToast }: ResponseHistoryModalProps) {
+export function ResponseHistoryModal({ form, profile, departments, onClose, showToast }: ResponseHistoryModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
       <motion.div 
@@ -99,7 +99,7 @@ export function ResponseHistoryModal({ form, profile, onClose, showToast }: Resp
                           </div>
                         </td>
                         <td className="p-4">{resp.responderName}</td>
-                        <td className="p-4 text-gray-500">{DEPARTMENTS.find(d => d.id === resp.responderDepartmentId)?.name || resp.responderDepartmentId}</td>
+                        <td className="p-4 text-gray-500">{departments.find(d => d.id === resp.responderDepartmentId)?.name || resp.responderDepartmentId}</td>
                         <td className="p-4 text-gray-400 text-xs">{new Date(resp.respondedAt).toLocaleString()}</td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1">

@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { Form, UserProfile, FormField, WorkflowStep } from '../../types';
+import { Form, UserProfile, FormField, WorkflowStep, Department } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { DEPARTMENTS } from '../../constants/departments';
 import { FormFieldManager } from './FormFieldManager';
 import { WorkflowManager } from './WorkflowManager';
 
 interface EditFormModalProps {
   form: Form;
   profile: UserProfile;
+  departments: Department[];
   onClose: () => void;
   showToast: (msg: string, type?: 'success' | 'error') => void;
 }
 
-export function EditFormModal({ form, profile, onClose, showToast }: EditFormModalProps) {
+export function EditFormModal({ form, profile, departments, onClose, showToast }: EditFormModalProps) {
   const [title, setTitle] = useState(form.title);
   const [content, setContent] = useState(form.content);
   const [isPublic, setIsPublic] = useState(form.isPublic || false);
@@ -37,6 +37,10 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isPublic && targetDepartmentIds.length === 0) {
+      showToast('請至少選擇一個發佈單位', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       await localDb.updateForm(form.id!, { 
@@ -117,32 +121,54 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl border border-blue-100">
-              <input 
-                type="checkbox" 
-                id="edit-is-public" 
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="w-4 h-4 accent-[#141414]"
-              />
-              <label htmlFor="edit-is-public" className="text-xs font-bold text-blue-900">
+          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+            <label className="block text-xs font-bold text-gray-700 uppercase">發佈對象 <span className="text-red-500">*</span></label>
+            
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPublic(true);
+                  setTargetDepartmentIds([]);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                  isPublic
+                    ? 'bg-[#141414] text-white border-[#141414]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                }`}
+              >
                 全部公開
-              </label>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPublic(false);
+                  if (targetDepartmentIds.length === 0) {
+                    setTargetDepartmentIds([profile.departmentId]);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                  !isPublic
+                    ? 'bg-[#141414] text-white border-[#141414]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                }`}
+              >
+                指定單位
+              </button>
             </div>
 
             {!isPublic && (
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <label className="block text-xs font-bold text-gray-700 mb-2">發佈給特定單位 (多選)</label>
+              <div className="pt-3 border-t border-gray-200">
+                <label className="block text-[10px] font-bold text-gray-400 mb-2 uppercase">選擇發佈單位 (多選)</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {DEPARTMENTS.map(dept => (
+                  {departments.map(dept => (
                     <button
                       key={dept.id}
                       type="button"
                       onClick={() => toggleDepartment(dept.id)}
                       className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
                         targetDepartmentIds.includes(dept.id)
-                          ? 'bg-[#141414] text-white border-[#141414]'
+                          ? 'bg-blue-600 text-white border-blue-600'
                           : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                       }`}
                     >
@@ -150,8 +176,12 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
                     </button>
                   ))}
                 </div>
+                {targetDepartmentIds.length === 0 && (
+                  <p className="mt-2 text-[9px] text-red-500 italic font-bold">請至少選擇一個單位</p>
+                )}
               </div>
             )}
+          </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="relative">
@@ -197,8 +227,24 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
             </div>
 
             <FormFieldManager fields={fields} setFields={setFields} />
-            <WorkflowManager workflow={workflow} setWorkflow={setWorkflow} fields={fields} title="表單發佈審核流程" />
-            <WorkflowManager workflow={responseWorkflow} setWorkflow={setResponseWorkflow} fields={fields} title="回傳資料審核流程" />
+            <WorkflowManager 
+              workflow={workflow} 
+              setWorkflow={setWorkflow} 
+              fields={fields} 
+              title="表單發佈審核流程" 
+              isPublic={isPublic}
+              targetDepartmentIds={targetDepartmentIds}
+              profile={profile}
+            />
+            <WorkflowManager 
+              workflow={responseWorkflow} 
+              setWorkflow={setResponseWorkflow} 
+              fields={fields} 
+              title="回傳資料審核流程" 
+              isPublic={isPublic}
+              targetDepartmentIds={targetDepartmentIds}
+              profile={profile}
+            />
 
             {fields.length > 0 && (
               <div className="pt-4 border-t border-gray-100 space-y-4">
@@ -272,7 +318,6 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
                 </div>
               </div>
             )}
-          </div>
 
           <div className="flex gap-3 pt-2">
             <button
