@@ -156,68 +156,113 @@ export function ResponseUpload({ form, profile, showHistory = true, showToast, o
                     <label className="block text-xs font-bold text-gray-700">
                       {field.label} {required && <span className="text-red-500">*</span>}
                     </label>
-                    {answers[field.id] !== undefined && answers[field.id] !== '' && (!Array.isArray(answers[field.id]) || answers[field.id].length > 0) && (
-                      <button 
-                        type="button"
-                        onClick={() => setAnswers({ ...answers, [field.id]: field.type === 'checkbox' ? [] : undefined })}
-                        className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
-                        title="清除此欄位"
-                      >
-                        <X size={10} /> 清除
-                      </button>
-                    )}
                   </div>
                   
                   {field.type === 'text' && (
-                    <input
-                      type="text"
-                      value={answers[field.id] || ''}
-                      onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
-                      placeholder="請輸入內容..."
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={answers[field.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
+                        className={`w-full p-3 pr-10 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
+                        placeholder="請輸入內容..."
+                      />
+                      {answers[field.id] && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: '' })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {field.type === 'textarea' && (
-                    <textarea
-                      value={answers[field.id] || ''}
-                      onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm resize-none`}
-                      rows={4}
-                      placeholder="請輸入內容..."
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={answers[field.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
+                        className={`w-full p-3 pr-10 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm resize-none`}
+                        rows={4}
+                        placeholder="請輸入內容..."
+                      />
+                      {answers[field.id] && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: '' })}
+                          className="absolute right-3 top-4 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {field.type === 'number' && (
-                    <input
-                      type="number"
-                      value={answers[field.id] || ''}
-                      onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
-                      placeholder="請輸入數字..."
-                    />
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={answers[field.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
+                        className={`w-full p-3 pr-10 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
+                        placeholder="請輸入數字..."
+                      />
+                      {answers[field.id] !== undefined && answers[field.id] !== '' && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: '' })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {field.type === 'date' && (
-                    <input
-                      type="date"
-                      value={answers[field.id] || ''}
-                      onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
-                    />
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={answers[field.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
+                        className={`w-full p-3 pr-10 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm`}
+                      />
+                      {answers[field.id] && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: '' })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {field.type === 'select' && (
-                    <select
-                      value={answers[field.id] || ''}
-                      onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
-                      className={`w-full p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm bg-white`}
-                    >
-                      <option value="">請選擇...</option>
-                      {field.options?.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={answers[field.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [field.id]: e.target.value })}
+                        className={`w-full p-3 pr-10 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} focus:border-black outline-none text-sm bg-white appearance-none`}
+                      >
+                        <option value="">請選擇...</option>
+                        {field.options?.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                      {answers[field.id] && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: '' })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {field.type === 'radio' && (
@@ -240,25 +285,36 @@ export function ResponseUpload({ form, profile, showHistory = true, showToast, o
 
                   {field.type === 'checkbox' && (
                     <div className={`space-y-2 p-3 rounded-xl border ${error ? 'border-red-500 bg-red-50' : 'border-transparent'}`}>
-                      <div className="flex flex-wrap gap-3">
-                        {field.options?.map(opt => (
-                          <label key={opt} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              value={opt}
-                              checked={(answers[field.id] || []).includes(opt)}
-                              onChange={(e) => {
-                                const current = answers[field.id] || [];
-                                const next = e.target.checked 
-                                  ? [...current, opt]
-                                  : current.filter((i: string) => i !== opt);
-                                setAnswers({ ...answers, [field.id]: next });
-                              }}
-                              className="w-4 h-4 accent-black"
-                            />
-                            <span className="text-sm text-gray-600">{opt}</span>
-                          </label>
-                        ))}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex flex-wrap gap-3">
+                          {field.options?.map(opt => (
+                            <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                value={opt}
+                                checked={(answers[field.id] || []).includes(opt)}
+                                onChange={(e) => {
+                                  const current = answers[field.id] || [];
+                                  const next = e.target.checked 
+                                    ? [...current, opt]
+                                    : current.filter((i: string) => i !== opt);
+                                  setAnswers({ ...answers, [field.id]: next });
+                                }}
+                                className="w-4 h-4 accent-black"
+                              />
+                              <span className="text-sm text-gray-600">{opt}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {(answers[field.id] || []).length > 0 && (
+                          <button 
+                            type="button"
+                            onClick={() => setAnswers({ ...answers, [field.id]: [] })}
+                            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
+                          >
+                            <X size={10} /> 清除
+                          </button>
+                        )}
                       </div>
                       {field.maxSelections && (
                         <p className="text-[10px] text-gray-400 italic">最多可選 {field.maxSelections} 項</p>
@@ -267,7 +323,7 @@ export function ResponseUpload({ form, profile, showHistory = true, showToast, o
                   )}
 
                   {field.type === 'file' && (
-                    <div className={`p-4 border-2 border-dashed ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} rounded-xl`}>
+                    <div className={`p-4 border-2 border-dashed ${error ? 'border-red-500 bg-red-50' : 'border-gray-200'} rounded-xl relative`}>
                       <input
                         type="file"
                         id={`file-${field.id}`}
@@ -283,6 +339,15 @@ export function ResponseUpload({ form, profile, showHistory = true, showToast, o
                           {answers[field.id] ? (answers[field.id] as File).name : '點擊或拖曳上傳附件'}
                         </span>
                       </label>
+                      {answers[field.id] && (
+                        <button 
+                          type="button"
+                          onClick={() => setAnswers({ ...answers, [field.id]: undefined })}
+                          className="absolute right-3 top-3 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
                     </div>
                   )}
 

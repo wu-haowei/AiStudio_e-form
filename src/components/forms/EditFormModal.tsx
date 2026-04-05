@@ -76,23 +76,45 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
         <form onSubmit={handleUpdate} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">標題</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all"
-              required
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full p-3 pr-10 rounded-xl border border-gray-200 focus:border-black outline-none transition-all"
+                required
+              />
+              {title && (
+                <button
+                  type="button"
+                  onClick={() => setTitle('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">內容</label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={5}
-              className="w-full p-3 rounded-xl border border-gray-200 focus:border-black outline-none transition-all resize-none"
-              required
-            />
+            <div className="relative">
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={5}
+                className="w-full p-3 pr-10 rounded-xl border border-gray-200 focus:border-black outline-none transition-all resize-none"
+                required
+              />
+              {content && (
+                <button
+                  type="button"
+                  onClick={() => setContent('')}
+                  className="absolute right-3 top-4 text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -131,46 +153,46 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-bold text-gray-700">發佈開始時間</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">發佈開始時間</label>
+                <div className="relative">
+                  <input
+                    type="datetime-local"
+                    value={publishStartTime}
+                    onChange={(e) => setPublishStartTime(e.target.value)}
+                    className="w-full p-3 pr-10 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm min-h-[48px]"
+                  />
                   {publishStartTime && (
                     <button 
                       type="button"
                       onClick={() => setPublishStartTime('')}
-                      className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5"
+                      className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
                     >
-                      <X size={10} /> 清除
+                      <X size={16} />
                     </button>
                   )}
                 </div>
-                <input
-                  type="datetime-local"
-                  value={publishStartTime}
-                  onChange={(e) => setPublishStartTime(e.target.value)}
-                  className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none transition-all text-xs"
-                />
               </div>
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-bold text-gray-700">發佈結束時間</label>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">發佈結束時間</label>
+                <div className="relative">
+                  <input
+                    type="datetime-local"
+                    value={publishEndTime}
+                    onChange={(e) => setPublishEndTime(e.target.value)}
+                    className="w-full p-3 pr-10 rounded-xl border border-gray-200 focus:border-black outline-none transition-all text-sm min-h-[48px]"
+                  />
                   {publishEndTime && (
                     <button 
                       type="button"
                       onClick={() => setPublishEndTime('')}
-                      className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5"
+                      className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
                     >
-                      <X size={10} /> 清除
+                      <X size={16} />
                     </button>
                   )}
                 </div>
-                <input
-                  type="datetime-local"
-                  value={publishEndTime}
-                  onChange={(e) => setPublishEndTime(e.target.value)}
-                  className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none transition-all text-xs"
-                />
               </div>
             </div>
 
@@ -180,35 +202,26 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
 
             {fields.length > 0 && (
               <div className="pt-4 border-t border-gray-100 space-y-4">
-                <h4 className="text-sm font-bold text-gray-700">編輯表單初始資料</h4>
+                <h4 className="text-sm font-bold text-gray-700">表單畫面模擬</h4>
                 <div className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
                   {fields.map(field => (
                     <div key={field.id} className="space-y-1">
                       <div className="flex items-center justify-between">
                         <label className="block text-[10px] font-bold text-gray-500 uppercase">{field.label}</label>
-                        {initialAnswers[field.id] !== undefined && initialAnswers[field.id] !== '' && (!Array.isArray(initialAnswers[field.id]) || initialAnswers[field.id].length > 0) && (
-                          <button 
-                            type="button"
-                            onClick={() => setInitialAnswers({ ...initialAnswers, [field.id]: field.type === 'checkbox' ? [] : undefined })}
-                            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
-                          >
-                            <X size={10} /> 清除
-                          </button>
-                        )}
                       </div>
                       {field.type === 'text' && (
                         <input
                           type="text"
                           value={initialAnswers[field.id] || ''}
-                          onChange={(e) => setInitialAnswers({ ...initialAnswers, [field.id]: e.target.value })}
-                          className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none text-xs"
+                          disabled
+                          className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs cursor-not-allowed"
                         />
                       )}
                       {field.type === 'textarea' && (
                         <textarea
                           value={initialAnswers[field.id] || ''}
-                          onChange={(e) => setInitialAnswers({ ...initialAnswers, [field.id]: e.target.value })}
-                          className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none text-xs resize-none"
+                          disabled
+                          className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs resize-none cursor-not-allowed"
                           rows={2}
                         />
                       )}
@@ -216,15 +229,15 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
                         <input
                           type="number"
                           value={initialAnswers[field.id] || ''}
-                          onChange={(e) => setInitialAnswers({ ...initialAnswers, [field.id]: e.target.value })}
-                          className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none text-xs"
+                          disabled
+                          className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs cursor-not-allowed"
                         />
                       )}
                       {field.type === 'select' && (
                         <select
                           value={initialAnswers[field.id] || ''}
-                          onChange={(e) => setInitialAnswers({ ...initialAnswers, [field.id]: e.target.value })}
-                          className="w-full p-2 rounded-lg border border-gray-200 focus:border-black outline-none text-xs bg-white"
+                          disabled
+                          className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs cursor-not-allowed"
                         >
                           <option value="">請選擇...</option>
                           {field.options?.map(opt => (
@@ -235,22 +248,14 @@ export function EditFormModal({ form, profile, onClose, showToast }: EditFormMod
                       {(field.type === 'radio' || field.type === 'checkbox') && (
                         <div className="flex flex-wrap gap-2">
                           {field.options?.map(opt => (
-                            <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
+                            <label key={opt} className="flex items-center gap-1.5 cursor-not-allowed opacity-60">
                               <input
                                 type={field.type === 'radio' ? 'radio' : 'checkbox'}
                                 name={`edit-initial-${field.id}`}
                                 value={opt}
                                 checked={field.type === 'radio' ? initialAnswers[field.id] === opt : (initialAnswers[field.id] || []).includes(opt)}
-                                onChange={(e) => {
-                                  if (field.type === 'radio') {
-                                    setInitialAnswers({ ...initialAnswers, [field.id]: e.target.value });
-                                  } else {
-                                    const current = initialAnswers[field.id] || [];
-                                    const next = e.target.checked ? [...current, opt] : current.filter((i: string) => i !== opt);
-                                    setInitialAnswers({ ...initialAnswers, [field.id]: next });
-                                  }
-                                }}
-                                className="w-3 h-3 accent-black"
+                                disabled
+                                className="w-3 h-3 accent-black cursor-not-allowed"
                               />
                               <span className="text-[10px] text-gray-600">{opt}</span>
                             </label>

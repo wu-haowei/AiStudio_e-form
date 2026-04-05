@@ -101,7 +101,8 @@ export function UserManagementView({ users, showToast }: { users: UserProfile[],
       </header>
 
       <div className="bg-white rounded-3xl border border-[#E5E5E5] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-[#E5E5E5]">
@@ -155,6 +156,57 @@ export function UserManagementView({ users, showToast }: { users: UserProfile[],
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {users.map(u => (
+            <div key={u.uid} className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">
+                    {u.displayName.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm">{u.displayName}</div>
+                    <div className="text-[10px] text-gray-500">{u.email}</div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setEditingUser(u)}
+                  className="p-2 text-gray-400 hover:text-black bg-gray-50 rounded-xl transition-all"
+                >
+                  <Edit size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 py-3 border-y border-gray-50">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">單位</p>
+                  <p className="text-xs font-medium text-gray-700">
+                    {DEPARTMENTS.find(d => d.id === u.departmentId)?.name || '未知單位'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">註冊時間</p>
+                  <p className="text-xs font-medium text-gray-700">
+                    {new Date(u.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold text-gray-400 uppercase">權限</p>
+                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' :
+                  u.role === 'admin' ? 'bg-blue-100 text-blue-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}>
+                  {u.role === 'super_admin' ? '超級管理員' : u.role === 'admin' ? '單位管理者' : '一般使用者'}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

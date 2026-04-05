@@ -148,7 +148,8 @@ export function ManageFormsView({
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50/50 border-b border-gray-100">
@@ -271,6 +272,115 @@ export function ManageFormsView({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {filteredForms.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">未找到符合條件的表單</div>
+          ) : (
+            filteredForms.map((form) => (
+              <div key={form.id} className="p-4 space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-gray-900 break-words">{form.title}</h4>
+                    <p className="text-[10px] text-gray-400 mt-1">{new Date(form.createdAt).toLocaleString()}</p>
+                  </div>
+                  <StatusBadge status={form.status} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 py-3 border-y border-gray-50">
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">申請人</p>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center text-[10px] font-bold text-gray-600">
+                        {form.authorName[0]}
+                      </div>
+                      <span className="text-xs font-medium text-gray-700 truncate">{form.authorName}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">單位</p>
+                    <p className="text-xs text-gray-700 truncate">
+                      {DEPARTMENTS.find(d => d.id === form.departmentId)?.name || '未知'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    {viewMode === 'forms' && form.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => handleApproval(form, 'approve')}
+                          className="p-2 text-green-600 bg-green-50 rounded-xl transition-all"
+                        >
+                          <CheckCircle size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleApproval(form, 'reject')}
+                          className="p-2 text-red-600 bg-red-50 rounded-xl transition-all"
+                        >
+                          <XCircle size={18} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {viewMode === 'forms' && (
+                      <>
+                        <button
+                          onClick={() => setViewingLogs(form)}
+                          className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 rounded-xl transition-all"
+                        >
+                          <History size={18} />
+                        </button>
+                        <button
+                          onClick={() => setEditingForm(form)}
+                          className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 rounded-xl transition-all"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(form.id!)}
+                          className="p-2 text-gray-400 hover:text-red-600 bg-gray-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {viewMode === 'responses' && form.responses && form.responses.length > 0 && (
+                  <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100 space-y-2">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-2">
+                      <Upload size={10} /> 回傳資料 ({form.responses.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {form.responses.map((resp) => (
+                        <div key={resp.id} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm space-y-3">
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-gray-900">{resp.responderName}</span>
+                              <span className="text-[10px] text-gray-400">{new Date(resp.respondedAt).toLocaleString()}</span>
+                            </div>
+                            <StatusBadge status={resp.status} />
+                          </div>
+                          <button 
+                            onClick={() => setViewingResponseDetails({ form, response: resp })}
+                            className="w-full py-2 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-lg hover:bg-blue-100 transition-all flex items-center justify-center gap-1"
+                          >
+                            <Eye size={12} /> 檢視資料
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
 
