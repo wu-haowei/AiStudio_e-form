@@ -279,6 +279,14 @@ export function EditFormModal({ form, profile, departments, onClose, showToast }
                           className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs cursor-not-allowed"
                         />
                       )}
+                      {field.type === 'date' && (
+                        <input
+                          type="date"
+                          value={initialAnswers[field.id] || ''}
+                          disabled
+                          className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-400 outline-none text-xs cursor-not-allowed"
+                        />
+                      )}
                       {field.type === 'select' && (
                         <select
                           value={initialAnswers[field.id] || ''}

@@ -296,6 +296,14 @@ export function SubmitFormView({ profile, departments, onComplete, showToast }: 
                       placeholder="請輸入數字..."
                     />
                   )}
+                  {field.type === 'date' && (
+                    <input
+                      type="date"
+                      value={initialAnswers[field.id] || ''}
+                      disabled
+                      className="w-full p-3 rounded-xl border border-gray-200 bg-gray-100 text-gray-400 outline-none text-sm cursor-not-allowed"
+                    />
+                  )}
                   {field.type === 'select' && (
                     <select
                       value={initialAnswers[field.id] || ''}

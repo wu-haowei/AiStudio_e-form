@@ -27,3 +27,22 @@ export const getDeptBreadcrumb = (deptId: string | null, departments: Department
   }
   return path.join(' > ');
 };
+
+export const getDeptPath = (deptId: string | null, departments: Department[]): string[] => {
+  if (!deptId) return [];
+  const path: string[] = [];
+  let currentId: string | null = deptId;
+  const visited = new Set<string>();
+
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const dept = departments.find(d => d.id === currentId);
+    if (dept) {
+      path.unshift(dept.id);
+      currentId = dept.parentId;
+    } else {
+      break;
+    }
+  }
+  return path;
+};

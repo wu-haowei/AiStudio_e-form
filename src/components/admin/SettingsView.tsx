@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile, Role, Department } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { getDeptBreadcrumb } from '../../utils/departmentUtils';
+import { getDeptBreadcrumb, getDeptPath } from '../../utils/departmentUtils';
+import { HierarchySelect } from './HierarchySelect';
 import { Upload, Download, Edit, X, CheckCircle, Plus, Trash2, ChevronRight, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -471,7 +472,7 @@ export function SettingsView({ users, departments, showToast }: SettingsViewProp
                         <div className="text-[10px] text-gray-400 mt-0.5">{getDeptBreadcrumb(d.id, departments)}</div>
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        {getDeptBreadcrumb(d.parentId, departments)}
+                        {departments.find(parent => parent.id === d.parentId)?.name || '無'}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         {d.level}
@@ -512,7 +513,7 @@ export function SettingsView({ users, departments, showToast }: SettingsViewProp
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-bold text-gray-400 uppercase">上級單位</p>
                     <p className="text-xs font-medium text-gray-700">
-                      {getDeptBreadcrumb(d.parentId, departments)}
+                      {departments.find(parent => parent.id === d.parentId)?.name || '無'}
                     </p>
                   </div>
                   <div className="flex items-center justify-between">
@@ -550,19 +551,15 @@ export function SettingsView({ users, departments, showToast }: SettingsViewProp
                 )}
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">單位 <span className="text-red-500">*</span></label>
-                  <select 
-                    value={isAddingUser ? newUser.departmentId : editingUser?.departmentId}
-                    onChange={(e) => isAddingUser 
-                      ? setNewUser({ ...newUser, departmentId: e.target.value })
-                      : setEditingUser(editingUser ? { ...editingUser, departmentId: e.target.value } : null)
+                  <HierarchySelect
+                    departments={departments}
+                    value={isAddingUser ? (newUser.departmentId || null) : (editingUser?.departmentId || null)}
+                    onChange={(val) => isAddingUser
+                      ? setNewUser({ ...newUser, departmentId: val || '' })
+                      : setEditingUser(editingUser ? { ...editingUser, departmentId: val || '' } : null)
                     }
-                    className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-black outline-none transition-all"
-                  >
-                    <option value="">請選擇單位</option>
-                    {departments.filter(d => !d.isDeleted).map(dept => (
-                      <option key={dept.id} value={dept.id}>{getDeptBreadcrumb(dept.id, departments)}</option>
-                    ))}
-                  </select>
+                    placeholder="請選擇單位"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">權限角色</label>
@@ -623,19 +620,16 @@ export function SettingsView({ users, departments, showToast }: SettingsViewProp
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">上級單位</label>
-                  <select 
-                    value={editingDept ? (editingDept.parentId || '') : (newDept.parentId || '')}
-                    onChange={(e) => {
-                      const val = e.target.value || null;
-                      editingDept ? setEditingDept({ ...editingDept, parentId: val }) : setNewDept({ ...newDept, parentId: val });
-                    }}
-                    className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-black outline-none transition-all"
-                  >
-                    <option value="">無 (第一層級)</option>
-                    {departments.filter(d => !d.isDeleted && d.id !== editingDept?.id).map(dept => (
-                      <option key={dept.id} value={dept.id}>{getDeptBreadcrumb(dept.id, departments)}</option>
-                    ))}
-                  </select>
+                  <HierarchySelect
+                    departments={departments}
+                    value={editingDept ? (editingDept.parentId || null) : (newDept.parentId || null)}
+                    onChange={(val) => editingDept 
+                      ? setEditingDept({ ...editingDept, parentId: val }) 
+                      : setNewDept({ ...newDept, parentId: val })
+                    }
+                    excludeId={editingDept?.id}
+                    placeholder="無 (第一層級)"
+                  />
                 </div>
                 <div className="flex gap-3 pt-4">
                   <button onClick={() => { setIsAddingDept(false); setEditingDept(null); }} className="flex-1 py-4 border-2 border-gray-100 rounded-2xl font-bold hover:bg-gray-50 transition-all">取消</button>
@@ -673,16 +667,13 @@ export function SettingsView({ users, departments, showToast }: SettingsViewProp
 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">轉移至新單位 <span className="text-red-500">*</span></label>
-                  <select 
-                    value={bulkTargetDeptId}
-                    onChange={(e) => setBulkTargetDeptId(e.target.value)}
-                    className="w-full p-4 rounded-2xl border-2 border-gray-100 focus:border-black outline-none transition-all"
-                  >
-                    <option value="">請選擇目標單位</option>
-                    {departments.filter(d => !d.isDeleted && d.id !== reassigningDept.id).map(dept => (
-                      <option key={dept.id} value={dept.id}>{getDeptBreadcrumb(dept.id, departments)}</option>
-                    ))}
-                  </select>
+                  <HierarchySelect
+                    departments={departments}
+                    value={bulkTargetDeptId || null}
+                    onChange={(val) => setBulkTargetDeptId(val || '')}
+                    excludeId={reassigningDept.id}
+                    placeholder="請選擇目標單位"
+                  />
                 </div>
 
                 <div className="flex gap-3 pt-4">
